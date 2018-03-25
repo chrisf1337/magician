@@ -1,0 +1,11 @@
+[[package]]
+name = "httpparser"
+version = "0.1.0"
+
+[[package]]
+name = "magician"
+version = "0.1.0"
+dependencies = [
+ "httpparser 0.1.0",
+]
+
