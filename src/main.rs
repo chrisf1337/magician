@@ -1,7 +1,7 @@
 extern crate httpparser;
 
-use httpparser::lexer;
+use httpparser::parser;
 
 fn main() {
-    lexer::lex(&String::from("input"));
+    // parser::lex(&String::from("input"));
 }
