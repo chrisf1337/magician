@@ -13,12 +13,13 @@ pub enum NodeType {
     Text,
     Head,
     Body,
+    Img,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct DomNode {
     pub node_type: NodeType,
-    pub attrs: Vec<(Token, Token)>,
+    pub attrs: Vec<(Token, Option<Token>)>,
     pub pos: Pos,
     pub children: Vec<DomNode>,
 }
@@ -26,7 +27,7 @@ pub struct DomNode {
 impl DomNode {
     fn new(
         node_type: NodeType,
-        attrs: Vec<(Token, Token)>,
+        attrs: Vec<(Token, Option<Token>)>,
         pos: Pos,
         children: Vec<DomNode>,
     ) -> DomNode {
@@ -48,7 +49,7 @@ pub enum Error {
 type ParserResult<T> = Result<(T, Pos), Error>;
 type ParserFn<T> = fn(&Vec<char>, Pos) -> ParserResult<T>;
 
-fn consume_whitespace(input: &Vec<char>, (mut index, mut row, mut col): Pos) -> Result<Pos, Error> {
+fn consume_whitespace(input: &Vec<char>, (mut index, mut row, mut col): Pos) -> ParserResult<()> {
     if index >= input.len() {
         return Err(Error::Eof((index, row, col)));
     }
@@ -68,11 +69,11 @@ fn consume_whitespace(input: &Vec<char>, (mut index, mut row, mut col): Pos) -> 
         }
         index += 1;
     }
-    Ok((index, row, col))
+    Ok(((), (index, row, col)))
 }
 
 fn parse_identifier(input: &Vec<char>, pos: Pos) -> ParserResult<Token> {
-    let pos = consume_whitespace(input, pos)?;
+    let (_, pos) = consume_whitespace(input, pos)?;
     parse_identifier_strict(&input, pos)
 }
 
@@ -106,7 +107,7 @@ fn parse_identifier_strict(
 
 // Returned position is the start of the first quote char. String returned in Token::Str enum does not include quotes.
 fn parse_string(input: &Vec<char>, pos: Pos) -> ParserResult<Token> {
-    let (mut index, row, mut col) = consume_whitespace(input, pos)?;
+    let (_, (mut index, row, mut col)) = consume_whitespace(input, pos)?;
     if index >= input.len() {
         return Err(Error::Eof((index, row, col)));
     }
@@ -151,7 +152,7 @@ fn parse_string(input: &Vec<char>, pos: Pos) -> ParserResult<Token> {
 
 fn parse_number(input: &Vec<char>, pos: Pos) -> ParserResult<Token> {
     let pos = consume_whitespace(input, pos)?;
-    let (mut index, row, mut col) = pos;
+    let (_, (mut index, row, mut col)) = pos;
     if index >= input.len() {
         return Err(Error::Eof((index, row, col)));
     }
@@ -179,10 +180,10 @@ fn parse_number(input: &Vec<char>, pos: Pos) -> ParserResult<Token> {
     ))
 }
 
-fn parse_one_char(input: &Vec<char>, pos: Pos, ch: char) -> Result<Pos, Error> {
-    let (index, row, col) = consume_whitespace(input, pos)?;
+fn parse_one_char(input: &Vec<char>, pos: Pos, ch: char) -> ParserResult<()> {
+    let ((), (index, row, col)) = consume_whitespace(input, pos)?;
     if input[index] == ch {
-        Ok((index + 1, row, col + 1))
+        Ok(((), (index + 1, row, col + 1)))
     } else {
         Err(Error::Unexpected(
             pos,
@@ -190,6 +191,8 @@ fn parse_one_char(input: &Vec<char>, pos: Pos, ch: char) -> Result<Pos, Error> {
         ))
     }
 }
+
+// fn parse_chars(input: &Vec<char>, pos: Pos, chs: &str) -> Result
 
 fn try_parse_token(
     input: &Vec<char>,
@@ -207,14 +210,13 @@ fn try_parse_token(
     }
 }
 
-fn parse_tag_attributes(input: &Vec<char>, pos: Pos) -> ParserResult<Vec<(Token, Token)>> {
+fn parse_tag_attributes(input: &Vec<char>, pos: Pos) -> ParserResult<Vec<(Token, Option<Token>)>> {
     let mut next_start_pos = pos;
-    let mut attributes: Vec<(Token, Token)> = vec![];
-    // this code sucks: should really write a combinator for try
+    let mut attributes: Vec<(Token, Option<Token>)> = vec![];
     loop {
         match parse_identifier(input, next_start_pos) {
             Ok((id, eq_start_pos)) => match parse_one_char(input, eq_start_pos, '=') {
-                Ok(val_start_pos) => {
+                Ok(((), val_start_pos)) => {
                     let parsers: Vec<ParserFn<Token>> =
                         vec![parse_identifier, parse_string, parse_number];
                     match try_parse_token(
@@ -224,13 +226,17 @@ fn parse_tag_attributes(input: &Vec<char>, pos: Pos) -> ParserResult<Vec<(Token,
                         "expected attribute value".to_string(),
                     ) {
                         Ok((val_token, new_pos)) => {
-                            attributes.push((id, val_token));
+                            attributes.push((id, Some(val_token)));
                             next_start_pos = new_pos;
                         }
                         Err(_) => return Ok((attributes, next_start_pos)),
                     }
                 }
-                Err(_) => return Ok((attributes, next_start_pos)),
+                Err(_) => {
+                    // no =, so the attribute doesn't have a value
+                    attributes.push((id, None));
+                    next_start_pos = eq_start_pos;
+                }
             },
             Err(_) => return Ok((attributes, next_start_pos)),
         }
@@ -247,7 +253,7 @@ fn tag_id_str_to_node_type(tag_id_str: &str) -> Option<NodeType> {
 }
 
 fn parse_opening_tag(input: &Vec<char>, pos: Pos) -> ParserResult<DomNode> {
-    let pos = parse_one_char(&input, pos, '<')?;
+    let (_, pos) = parse_one_char(&input, pos, '<')?;
     let (index, row, col) = pos;
     let tag_start_pos = (index - 1, row, col - 1);
     let (tag_id, pos) = parse_identifier_strict(&input, pos)?;
@@ -263,9 +269,13 @@ fn parse_opening_tag(input: &Vec<char>, pos: Pos) -> ParserResult<DomNode> {
         },
         _ => unreachable!(),
     };
+    let self_closing = match node_type {
+        NodeType::Img => true,
+        _ => false,
+    };
     let (attrs, pos) = parse_tag_attributes(&input, pos)?;
     let pos = match parse_one_char(&input, pos, '>') {
-        Ok(pos) => pos,
+        Ok((_, pos)) => pos,
         Err(Error::Eof(_)) => {
             return Err(Error::Unexpected(
                 tag_start_pos,
@@ -278,10 +288,10 @@ fn parse_opening_tag(input: &Vec<char>, pos: Pos) -> ParserResult<DomNode> {
 }
 
 fn parse_closing_tag(input: &Vec<char>, pos: Pos, opening_tag: DomNode) -> ParserResult<DomNode> {
-    let pos = parse_one_char(&input, pos, '<')?;
+    let ((), pos) = parse_one_char(&input, pos, '<')?;
     let (index, row, col) = pos;
     let tag_start_pos = (index - 1, row, col - 1);
-    let pos = parse_one_char(&input, pos, '/')?;
+    let ((), pos) = parse_one_char(&input, pos, '/')?;
     let (tag_id, pos) = parse_identifier_strict(&input, pos)?;
     let node_type = match tag_id {
         Token::Identifier(tag_id_pos, tag_id_str) => match tag_id_str_to_node_type(&tag_id_str) {
@@ -304,7 +314,7 @@ fn parse_closing_tag(input: &Vec<char>, pos: Pos, opening_tag: DomNode) -> Parse
             ).to_string(),
         ));
     }
-    let pos = parse_one_char(&input, pos, '>')?;
+    let (_, pos) = parse_one_char(&input, pos, '>')?;
     Ok((opening_tag, pos))
 }
 
@@ -333,7 +343,7 @@ fn parse_node(input: &Vec<char>, pos: Pos) -> ParserResult<DomNode> {
     let node_start_pos = node.pos;
     loop {
         pos = match consume_whitespace(&input, pos) {
-            Ok(pos) => pos,
+            Ok((_, pos)) => pos,
             Err(Error::Eof(_)) => {
                 return Err(Error::Unexpected(
                     node_start_pos,
@@ -478,11 +488,11 @@ mod tests {
                 vec![
                     (
                         Token::Identifier((0, 1, 1), "a".to_string()),
-                        Token::Str((2, 1, 3), "a".to_string()),
+                        Some(Token::Str((2, 1, 3), "a".to_string())),
                     ),
                     (
                         Token::Identifier((6, 1, 7), "b".to_string()),
-                        Token::Str((8, 1, 9), "b".to_string()),
+                        Some(Token::Str((8, 1, 9), "b".to_string())),
                     ),
                 ],
                 (11, 1, 12)
@@ -504,18 +514,104 @@ mod tests {
                 vec![
                     (
                         Token::Identifier((0, 1, 1), "a".to_string()),
-                        Token::Str((2, 1, 3), "1".to_string()),
+                        Some(Token::Str((2, 1, 3), "1".to_string())),
                     ),
                     (
                         Token::Identifier((6, 2, 1), "b".to_string()),
-                        Token::Number((8, 2, 3), 1),
+                        Some(Token::Number((8, 2, 3), 1)),
                     ),
                     (
                         Token::Identifier((10, 3, 1), "c".to_string()),
-                        Token::Identifier((12, 3, 3), "a1".to_string()),
+                        Some(Token::Identifier((12, 3, 3), "a1".to_string())),
                     ),
                 ],
                 (14, 3, 5)
+            ))
+        );
+    }
+
+    #[test]
+    fn test_parse_tag_attributes_whitespace() {
+        let input = indoc!(
+            "
+            a   =\t\"a\"
+            b=
+            \"b\"
+        "
+        );
+        assert_eq!(
+            parse_tag_attributes(&input.chars().collect(), (0, 1, 1)),
+            Ok((
+                vec![
+                    (
+                        Token::Identifier((0, 1, 1), "a".to_string()),
+                        Some(Token::Str((6, 1, 7), "a".to_string())),
+                    ),
+                    (
+                        Token::Identifier((10, 2, 1), "b".to_string()),
+                        Some(Token::Str((13, 3, 1), "b".to_string())),
+                    ),
+                ],
+                (16, 3, 4)
+            ))
+        )
+    }
+
+    #[test]
+    fn test_parse_tag_attributes_early_termination1() {
+        let input = "a='a' <";
+        assert_eq!(
+            parse_tag_attributes(&input.chars().collect(), (0, 1, 1)),
+            Ok((
+                vec![
+                    (
+                        Token::Identifier((0, 1, 1), "a".to_string()),
+                        Some(Token::Str((2, 1, 3), "a".to_string())),
+                    ),
+                ],
+                (5, 1, 6)
+            ))
+        );
+    }
+
+    #[test]
+    fn test_parse_tag_attributes_early_termination2() {
+        let input = "a='a <";
+        assert_eq!(
+            parse_tag_attributes(&input.chars().collect(), (0, 1, 1)),
+            Ok((vec![], (0, 1, 1)))
+        );
+    }
+
+    #[test]
+    fn test_parse_tag_attributes_none_val1() {
+        let input = "a=a b";
+        assert_eq!(
+            parse_tag_attributes(&input.chars().collect(), (0, 1, 1)),
+            Ok((
+                vec![
+                    (
+                        Token::Identifier((0, 1, 1), "a".to_string()),
+                        Some(Token::Identifier((2, 1, 3), "a".to_string())),
+                    ),
+                    (Token::Identifier((4, 1, 5), "b".to_string()), None),
+                ],
+                (5, 1, 6)
+            ))
+        );
+    }
+
+    #[test]
+    fn test_parse_tag_attributes_none_val2() {
+        let input = "a b";
+        assert_eq!(
+            parse_tag_attributes(&input.chars().collect(), (0, 1, 1)),
+            Ok((
+                vec![
+                    (Token::Identifier((0, 1, 1), "a".to_string()), None),
+                    (Token::Identifier((2, 1, 3), "b".to_string()), None),
+                ],
+                (3, 1, 4)
             ))
         );
     }
@@ -565,59 +661,6 @@ mod tests {
                 "error message".to_string()
             ),
             Err(Error::Unexpected((0, 1, 1), "error message".to_string()))
-        );
-    }
-
-    #[test]
-    fn test_parse_tag_attributes_whitespace() {
-        let input = indoc!(
-            "
-            a   =\t\"a\"
-            b=
-            \"b\"
-        "
-        );
-        assert_eq!(
-            parse_tag_attributes(&input.chars().collect(), (0, 1, 1)),
-            Ok((
-                vec![
-                    (
-                        Token::Identifier((0, 1, 1), "a".to_string()),
-                        Token::Str((6, 1, 7), "a".to_string()),
-                    ),
-                    (
-                        Token::Identifier((10, 2, 1), "b".to_string()),
-                        Token::Str((13, 3, 1), "b".to_string()),
-                    ),
-                ],
-                (16, 3, 4)
-            ))
-        )
-    }
-
-    #[test]
-    fn test_parse_tag_attributes_early_termination1() {
-        let input = "a='a' <";
-        assert_eq!(
-            parse_tag_attributes(&input.chars().collect(), (0, 1, 1)),
-            Ok((
-                vec![
-                    (
-                        Token::Identifier((0, 1, 1), "a".to_string()),
-                        Token::Str((2, 1, 3), "a".to_string()),
-                    ),
-                ],
-                (5, 1, 6)
-            ))
-        );
-    }
-
-    #[test]
-    fn test_parse_tag_attributes_early_termination2() {
-        let input = "a='a <";
-        assert_eq!(
-            parse_tag_attributes(&input.chars().collect(), (0, 1, 1)),
-            Ok((vec![], (0, 1, 1)))
         );
     }
 
@@ -714,11 +757,11 @@ mod tests {
                         vec![
                             (
                                 Token::Identifier((14, 1, 15), "a".to_string()),
-                                Token::Str((16, 1, 17), "b".to_string()),
+                                Some(Token::Str((16, 1, 17), "b".to_string())),
                             ),
                             (
                                 Token::Identifier((21, 1, 22), "c".to_string()),
-                                Token::Str((23, 1, 24), "d".to_string()),
+                                Some(Token::Str((23, 1, 24), "d".to_string())),
                             ),
                         ],
                         (8, 1, 9),
