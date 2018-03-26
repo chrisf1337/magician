@@ -1,6 +1,6 @@
-extern crate httpparser;
+extern crate magicparser;
 
-use httpparser::parser;
+use magicparser::htmlparser;
 
 fn main() {
     // parser::lex(&String::from("input"));

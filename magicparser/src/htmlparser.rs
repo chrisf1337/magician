@@ -4,6 +4,7 @@ type Pos = (usize, usize, usize); // index, row, col
 pub enum Token {
     Str(Pos, String),        // "..." or '...' (no support for quoted entities)
     Identifier(Pos, String), // ascii string starting with a letter
+    Number(Pos, i32),        // number
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -44,6 +45,9 @@ pub enum Error {
     Unexpected(Pos, String),
 }
 
+type ParserResult<T> = Result<(T, Pos), Error>;
+type ParserFn<T> = fn(&Vec<char>, Pos) -> ParserResult<T>;
+
 fn consume_whitespace(input: &Vec<char>, (mut index, mut row, mut col): Pos) -> Result<Pos, Error> {
     if index >= input.len() {
         return Err(Error::Eof((index, row, col)));
@@ -67,7 +71,7 @@ fn consume_whitespace(input: &Vec<char>, (mut index, mut row, mut col): Pos) -> 
     Ok((index, row, col))
 }
 
-fn parse_identifier(input: &Vec<char>, pos: Pos) -> Result<(Token, Pos), Error> {
+fn parse_identifier(input: &Vec<char>, pos: Pos) -> ParserResult<Token> {
     let pos = consume_whitespace(input, pos)?;
     parse_identifier_strict(&input, pos)
 }
@@ -101,7 +105,7 @@ fn parse_identifier_strict(
 }
 
 // Returned position is the start of the first quote char. String returned in Token::Str enum does not include quotes.
-fn parse_string(input: &Vec<char>, pos: Pos) -> Result<(Token, Pos), Error> {
+fn parse_string(input: &Vec<char>, pos: Pos) -> ParserResult<Token> {
     let (mut index, row, mut col) = consume_whitespace(input, pos)?;
     if index >= input.len() {
         return Err(Error::Eof((index, row, col)));
@@ -145,6 +149,36 @@ fn parse_string(input: &Vec<char>, pos: Pos) -> Result<(Token, Pos), Error> {
     }
 }
 
+fn parse_number(input: &Vec<char>, pos: Pos) -> ParserResult<Token> {
+    let pos = consume_whitespace(input, pos)?;
+    let (mut index, row, mut col) = pos;
+    if index >= input.len() {
+        return Err(Error::Eof((index, row, col)));
+    }
+    if !input[index].is_ascii_digit() {
+        return Err(Error::Unexpected(
+            (index, row, col),
+            "expected number".to_string(),
+        ));
+    }
+    let mut id: Vec<char> = vec![input[index]];
+    let start_pos = (index, row, col);
+    index += 1;
+    col += 1;
+    while index < input.len() && input[index].is_ascii_digit() {
+        id.push(input[index]);
+        index += 1;
+        col += 1;
+    }
+    Ok((
+        Token::Number(
+            start_pos,
+            id.into_iter().collect::<String>().parse::<i32>().unwrap(),
+        ),
+        (index, row, col),
+    ))
+}
+
 fn parse_one_char(input: &Vec<char>, pos: Pos, ch: char) -> Result<Pos, Error> {
     let (index, row, col) = consume_whitespace(input, pos)?;
     if input[index] == ch {
@@ -157,21 +191,45 @@ fn parse_one_char(input: &Vec<char>, pos: Pos, ch: char) -> Result<Pos, Error> {
     }
 }
 
-fn parse_tag_attributes(input: &Vec<char>, pos: Pos) -> Result<(Vec<(Token, Token)>, Pos), Error> {
+fn try_parse_token(
+    input: &Vec<char>,
+    pos: Pos,
+    parsers: &[fn(&Vec<char>, Pos) -> Result<(Token, Pos), Error>],
+    err_msg: String,
+) -> Result<(Token, Pos), Error> {
+    if parsers.is_empty() {
+        return Err(Error::Unexpected(pos, err_msg));
+    }
+    let parser = parsers[0];
+    match parser(input, pos) {
+        ok @ Ok(_) => ok,
+        Err(_) => try_parse_token(input, pos, &parsers[1..], err_msg),
+    }
+}
+
+fn parse_tag_attributes(input: &Vec<char>, pos: Pos) -> ParserResult<Vec<(Token, Token)>> {
     let mut next_start_pos = pos;
-    let mut id_start_pos = pos;
     let mut attributes: Vec<(Token, Token)> = vec![];
+    // this code sucks: should really write a combinator for try
     loop {
-        match parse_identifier(input, id_start_pos) {
+        match parse_identifier(input, next_start_pos) {
             Ok((id, eq_start_pos)) => match parse_one_char(input, eq_start_pos, '=') {
-                Ok(val_start_pos) => match parse_string(input, val_start_pos) {
-                    Ok((val, next_id_start_pos)) => {
-                        attributes.push((id, val));
-                        id_start_pos = next_id_start_pos;
-                        next_start_pos = next_id_start_pos;
+                Ok(val_start_pos) => {
+                    let parsers: Vec<ParserFn<Token>> =
+                        vec![parse_identifier, parse_string, parse_number];
+                    match try_parse_token(
+                        &input,
+                        val_start_pos,
+                        &parsers[..],
+                        "expected attribute value".to_string(),
+                    ) {
+                        Ok((val_token, new_pos)) => {
+                            attributes.push((id, val_token));
+                            next_start_pos = new_pos;
+                        }
+                        Err(_) => return Ok((attributes, next_start_pos)),
                     }
-                    Err(_) => return Ok((attributes, next_start_pos)),
-                },
+                }
                 Err(_) => return Ok((attributes, next_start_pos)),
             },
             Err(_) => return Ok((attributes, next_start_pos)),
@@ -188,7 +246,7 @@ fn tag_id_str_to_node_type(tag_id_str: &str) -> Option<NodeType> {
     }
 }
 
-fn parse_opening_tag(input: &Vec<char>, pos: Pos) -> Result<(DomNode, Pos), Error> {
+fn parse_opening_tag(input: &Vec<char>, pos: Pos) -> ParserResult<DomNode> {
     let pos = parse_one_char(&input, pos, '<')?;
     let (index, row, col) = pos;
     let tag_start_pos = (index - 1, row, col - 1);
@@ -219,11 +277,7 @@ fn parse_opening_tag(input: &Vec<char>, pos: Pos) -> Result<(DomNode, Pos), Erro
     Ok((DomNode::new(node_type, attrs, tag_start_pos, vec![]), pos))
 }
 
-fn parse_closing_tag(
-    input: &Vec<char>,
-    pos: Pos,
-    opening_tag: DomNode,
-) -> Result<(DomNode, Pos), Error> {
+fn parse_closing_tag(input: &Vec<char>, pos: Pos, opening_tag: DomNode) -> ParserResult<DomNode> {
     let pos = parse_one_char(&input, pos, '<')?;
     let (index, row, col) = pos;
     let tag_start_pos = (index - 1, row, col - 1);
@@ -254,10 +308,7 @@ fn parse_closing_tag(
     Ok((opening_tag, pos))
 }
 
-fn parse_text_node(
-    input: &Vec<char>,
-    (mut index, mut row, mut col): Pos,
-) -> Result<(DomNode, Pos), Error> {
+fn parse_text_node(input: &Vec<char>, (mut index, mut row, mut col): Pos) -> ParserResult<DomNode> {
     let mut text: Vec<char> = vec![];
     let start_pos = (index, row, col);
     while index < input.len() && input[index] != '<' {
@@ -277,7 +328,7 @@ fn parse_text_node(
     ))
 }
 
-fn parse_node(input: &Vec<char>, pos: Pos) -> Result<(DomNode, Pos), Error> {
+fn parse_node(input: &Vec<char>, pos: Pos) -> ParserResult<DomNode> {
     let (mut node, mut pos) = parse_opening_tag(&input, pos)?;
     let node_start_pos = node.pos;
     loop {
@@ -332,6 +383,10 @@ pub fn parse(input: &String) -> Result<DomNode, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::env;
+    use std::fs::File;
+    use std::io::prelude::*;
+    use std::path::Path;
 
     #[test]
     fn test_parse_identifier1() {
@@ -415,7 +470,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_tag_attributes() {
+    fn test_parse_tag_attributes1() {
         let input = "a=\"a\" b=\"b\"";
         assert_eq!(
             parse_tag_attributes(&input.chars().collect(), (0, 1, 1)),
@@ -433,6 +488,84 @@ mod tests {
                 (11, 1, 12)
             ))
         )
+    }
+
+    #[test]
+    fn test_parse_tag_attributes_multiple_value_types() {
+        let test_dir =
+            Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap()).join("src/htmlparser_tests");
+        let mut f = File::open(test_dir.join("parse_tag_attributes_multiple_value_types.html"))
+            .expect("file not found");
+        let mut input = String::new();
+        f.read_to_string(&mut input).expect("read");
+        assert_eq!(
+            parse_tag_attributes(&input.chars().collect(), (0, 1, 1)),
+            Ok((
+                vec![
+                    (
+                        Token::Identifier((0, 1, 1), "a".to_string()),
+                        Token::Str((2, 1, 3), "1".to_string()),
+                    ),
+                    (
+                        Token::Identifier((6, 2, 1), "b".to_string()),
+                        Token::Number((8, 2, 3), 1),
+                    ),
+                    (
+                        Token::Identifier((10, 3, 1), "c".to_string()),
+                        Token::Identifier((12, 3, 3), "a1".to_string()),
+                    ),
+                ],
+                (14, 3, 5)
+            ))
+        );
+    }
+
+    #[test]
+    fn test_try_parse_token1() {
+        let input = "abc";
+        let parsers: Vec<fn(&Vec<char>, Pos) -> Result<(Token, Pos), Error>> =
+            vec![parse_identifier, parse_number];
+        assert_eq!(
+            try_parse_token(
+                &input.chars().collect(),
+                (0, 1, 1),
+                &parsers[..],
+                "".to_string()
+            ),
+            Ok((Token::Identifier((0, 1, 1), "abc".to_string()), (3, 1, 4)))
+        );
+    }
+
+    #[test]
+    fn test_try_parse_token2() {
+        let input = "123";
+        let parsers: Vec<fn(&Vec<char>, Pos) -> Result<(Token, Pos), Error>> =
+            vec![parse_identifier, parse_number];
+        assert_eq!(
+            try_parse_token(
+                &input.chars().collect(),
+                (0, 1, 1),
+                &parsers[..],
+                "".to_string()
+            ),
+            Ok((Token::Number((0, 1, 1), 123), (3, 1, 4)))
+        );
+    }
+
+    #[test]
+    fn test_try_parse_token3() {
+        let input = "=";
+        let parsers: Vec<fn(&Vec<char>, Pos) -> Result<(Token, Pos), Error>> =
+            vec![parse_identifier, parse_number];
+        assert_eq!(
+            try_parse_token(
+                &input.chars().collect(),
+                (0, 1, 1),
+                &parsers[..],
+                "error message".to_string()
+            ),
+            Err(Error::Unexpected((0, 1, 1), "error message".to_string()))
+        );
     }
 
     #[test]

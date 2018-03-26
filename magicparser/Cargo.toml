@@ -1,5 +1,5 @@
 [package]
-name = "httpparser"
+name = "magicparser"
 version = "0.1.0"
 authors = ["Christopher Fu <chrisf1337@gmail.com>"]
 
