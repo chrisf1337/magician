@@ -83,7 +83,7 @@ impl HtmlParser {
         return Ok(self.input[i]);
     }
 
-    fn consume_char(&mut self) -> ParserResult<char> {
+    fn consume_char(&mut self) -> ParserResult<(Pos, char)> {
         // This code looks bad...
         // Check for comment
         let mut in_comment = false;
@@ -178,19 +178,48 @@ impl HtmlParser {
             self.set_pos(start_pos);
         }
         match self.get_ch(self.index) {
-            ok @ Ok('\n') => {
+            Ok('\n') => {
+                let pos = self.pos();
                 self.index += 1;
                 self.row += 1;
                 self.col = 1;
-                ok
+                Ok((pos, '\n'))
             }
-            ok @ Ok(_) => {
+            Ok(ch) => {
+                let pos = self.pos();
                 self.index += 1;
                 self.col += 1;
-                ok
+                Ok((pos, ch))
             }
             Err(err) => Err(err),
         }
+    }
+
+    fn peek_chars(&mut self, mut n: i32) -> ParserResult<(Pos, String)> {
+        let start_pos = self.pos();
+        let mut chars = String::new();
+        let (pos, ch) = match self.consume_char() {
+            Ok(res) => res,
+            Err(err) => {
+                self.set_pos(start_pos);
+                return Err(err);
+            }
+        };
+        chars.push(ch);
+        n -= 1;
+        while n > 0 {
+            let ch = match self.consume_char() {
+                Ok((_, ch)) => ch,
+                Err(err) => {
+                    self.set_pos(start_pos);
+                    return Err(err);
+                }
+            };
+            chars.push(ch);
+            n -= 1;
+        }
+        self.set_pos(start_pos);
+        Ok((pos, chars))
     }
 
     fn peek_char(&mut self) -> ParserResult<(Pos, char)> {
@@ -198,9 +227,9 @@ impl HtmlParser {
         // Check for comment
         let mut in_comment = false;
         let start_pos = self.pos();
-        let mut index = self.index;
-        let mut row = self.row;
-        let mut col = self.col;
+        let mut index = start_pos.0;
+        let mut row = start_pos.1;
+        let mut col = start_pos.2;
         while self.get_ch(index)
             .and_then(|ch| {
                 if ch == '<' {
@@ -383,7 +412,7 @@ impl HtmlParser {
             Ok((pos, ch)) => if ch != '\'' && ch != '"' {
                 return Err(Error::Unexpected(pos, "expected quote".to_string()));
             } else {
-                self.consume_char()?
+                self.consume_char()?.1
             },
             Err(err) => return Err(err),
         };
@@ -398,7 +427,7 @@ impl HtmlParser {
                 } else if ch == quote {
                     break;
                 } else {
-                    st.push(self.consume_char()?);
+                    st.push(self.consume_char()?.1);
                 },
                 Err(_) => break,
             }
@@ -419,44 +448,55 @@ impl HtmlParser {
     }
 
     fn parse_number(&mut self) -> ParserResult<Token> {
-        let _ = self.consume_whitespace()?;
-        if self.index >= self.input.len() {
-            return Err(Error::Eof(self.pos()));
-        }
-        if !self.input[self.index].is_ascii_digit() {
-            return Err(Error::Unexpected(self.pos(), "expected number".to_string()));
-        }
-        let mut id: Vec<char> = vec![self.input[self.index]];
         let start_pos = self.pos();
-        self.index += 1;
-        self.col += 1;
-        while self.index < self.input.len() && self.input[self.index].is_ascii_digit() {
-            id.push(self.input[self.index]);
-            self.index += 1;
-            self.col += 1;
+        let _ = self.consume_whitespace()?;
+        let mut id: Vec<char> = vec![];
+        match self.peek_char() {
+            Ok((_, ch)) => if ch.is_ascii_digit() {
+                id.push(ch);
+                self.consume_char()?;
+            } else {
+                return Err(Error::Unexpected(start_pos, "expected number".to_string()));
+            },
+            Err(err) => return Err(err),
         }
-        Ok(Token::Number(
-            start_pos,
-            id.into_iter().collect::<String>().parse::<i32>().unwrap(),
-        ))
+        loop {
+            match self.peek_char() {
+                Ok((_, ch)) => if ch.is_ascii_digit() {
+                    id.push(ch);
+                    self.consume_char()?;
+                } else {
+                    break;
+                },
+                Err(_) => break,
+            }
+        }
+        if id.is_empty() {
+            self.set_pos(start_pos);
+            Err(Error::Unexpected(start_pos, "expected number".to_string()))
+        } else {
+            Ok(Token::Number(
+                start_pos,
+                id.into_iter().collect::<String>().parse::<i32>().unwrap(),
+            ))
+        }
     }
 
-    fn parse_one_char(&mut self, ch: char) -> ParserResult<()> {
+    fn parse_one_char(&mut self, ch: char) -> ParserResult<Pos> {
         let _ = self.consume_whitespace()?;
         self.parse_one_char_strict(ch)
     }
 
-    fn parse_one_char_strict(&mut self, ch: char) -> ParserResult<()> {
+    fn parse_one_char_strict(&mut self, ch: char) -> ParserResult<Pos> {
         let start_pos = self.pos();
-        if self.input[self.index] == ch {
-            self.index += 1;
-            self.col += 1;
-            Ok(())
+        let (pos, c) = self.peek_char()?;
+        if c == ch {
+            self.consume_char()?;
+            Ok(pos)
         } else {
-            let cur_pos = self.pos();
             self.set_pos(start_pos);
             Err(Error::Unexpected(
-                cur_pos,
+                pos,
                 format!("expected {}, got {}", ch, self.input[self.index]).to_string(),
             ))
         }
@@ -484,7 +524,7 @@ impl HtmlParser {
         loop {
             match self.parse_identifier() {
                 Ok(id) => match self.parse_one_char('=') {
-                    Ok(()) => {
+                    Ok(_) => {
                         let parsers: Vec<ParserFn<Token>> = vec![
                             Self::parse_identifier,
                             Self::parse_string,
@@ -517,8 +557,7 @@ impl HtmlParser {
 
     fn parse_opening_tag(&mut self) -> ParserResult<DomNode> {
         let start_pos = self.pos();
-        let _ = self.parse_one_char('<')?;
-        let tag_start_pos = (self.index - 1, self.row, self.col - 1);
+        let tag_start_pos = self.parse_one_char('<')?;
         let tag_id = match self.parse_identifier_strict() {
             Ok(tag_id) => tag_id,
             Err(err) => {
@@ -560,8 +599,7 @@ impl HtmlParser {
 
     fn parse_closing_tag(&mut self, opening_tag: DomNode) -> ParserResult<DomNode> {
         let start_pos = self.pos();
-        let _ = self.parse_one_char('<')?;
-        let tag_start_pos = (self.index - 1, self.row, self.col - 1);
+        let tag_start_pos = self.parse_one_char('<')?;
         let _ = self.parse_one_char_strict('/')?;
         let tag_id = self.parse_identifier_strict()?;
         let node_type = match tag_id {
@@ -595,16 +633,15 @@ impl HtmlParser {
     fn parse_text_node(&mut self) -> ParserResult<DomNode> {
         let start_pos = self.pos();
         let mut text: Vec<char> = vec![];
-        println!("{:?}", self.pos());
-        while self.index < self.input.len() && self.input[self.index] != '<' {
-            text.push(self.input[self.index]);
-            self.index += 1;
-            match self.input[self.index] {
-                '\n' => {
-                    self.row += 1;
-                    self.col = 1;
-                }
-                _ => self.col += 1,
+        loop {
+            match self.peek_char() {
+                Ok((_, ch)) => if ch != '<' {
+                    let (_, ch) = self.consume_char()?;
+                    text.push(ch);
+                } else {
+                    break;
+                },
+                Err(_) => break,
             }
         }
         if text.is_empty() {
@@ -647,16 +684,10 @@ impl HtmlParser {
                     format!("unclosed element: {:?}", node),
                 ));
             }
-            match self.input[self.index] {
-                '<' => {
-                    if self.index + 1 >= self.input.len() {
-                        self.set_pos(start_pos);
-                        return Err(Error::Unexpected(
-                            node.pos,
-                            format!("unclosed element: {:?}", node),
-                        ));
-                    }
-                    if self.input[self.index + 1] == '/' {
+            match self.peek_chars(2) {
+                Ok((_, chars)) => {
+                    println!("{}", chars);
+                    if chars == "</" {
                         match self.parse_closing_tag(node) {
                             ok @ Ok(_) => return ok,
                             Err(err) => {
@@ -664,25 +695,34 @@ impl HtmlParser {
                                 return Err(err);
                             }
                         }
+                    } else if chars.chars().next().unwrap() == '<' {
+                        let child_node = match self.parse_node() {
+                            Ok(child_node) => child_node,
+                            Err(err) => {
+                                self.set_pos(start_pos);
+                                return Err(err);
+                            }
+                        };
+                        node.children.push(child_node);
+                    } else {
+                        let text_node = match self.parse_text_node() {
+                            Ok(text_node) => text_node,
+                            Err(err) => {
+                                self.set_pos(start_pos);
+                                return Err(err);
+                            }
+                        };
+                        node.children.push(text_node);
                     }
-                    let child_node = match self.parse_node() {
-                        Ok(child_node) => child_node,
-                        Err(err) => {
-                            self.set_pos(start_pos);
-                            return Err(err);
-                        }
-                    };
-                    node.children.push(child_node);
                 }
-                _ => {
-                    let text_node = match self.parse_text_node() {
-                        Ok(text_node) => text_node,
-                        Err(err) => {
-                            self.set_pos(start_pos);
-                            return Err(err);
-                        }
-                    };
-                    node.children.push(text_node);
+                Err(err @ Error::Eof(_)) => {
+                    println!("{:?}", node);
+                    self.set_pos(start_pos);
+                    return Err(err);
+                }
+                Err(err) => {
+                    self.set_pos(start_pos);
+                    return Err(err);
                 }
             }
         }
@@ -716,7 +756,7 @@ mod tests {
     fn test_consume_char1() {
         let mut parser = HtmlParser::new("a");
         let res = parser.consume_char();
-        assert_eq!(res, Ok('a'));
+        assert_eq!(res, Ok(((0, 1, 1), 'a')));
         assert_eq!(parser.pos(), (1, 1, 2));
     }
 
@@ -738,17 +778,17 @@ mod tests {
 
     #[test]
     fn test_consume_char_with_comment1() {
-        let mut parser = HtmlParser::new("<!---->a");
+        let mut parser = HtmlParser::new("<!---->\n");
         let res = parser.consume_char();
-        assert_eq!(res, Ok('a'));
-        assert_eq!(parser.pos(), (8, 1, 9));
+        assert_eq!(res, Ok(((7, 1, 8), '\n')));
+        assert_eq!(parser.pos(), (8, 2, 1));
     }
 
     #[test]
     fn test_consume_char_with_fake_comment() {
         let mut parser = HtmlParser::new("<!- --->a");
         let res = parser.consume_char();
-        assert_eq!(res, Ok('<'));
+        assert_eq!(res, Ok(((0, 1, 1), '<')));
         assert_eq!(parser.pos(), (1, 1, 2));
     }
 
@@ -756,7 +796,7 @@ mod tests {
     fn test_consume_char_with_newline_in_comment() {
         let mut parser = HtmlParser::new("<!--\n-->a");
         let res = parser.consume_char();
-        assert_eq!(res, Ok('a'));
+        assert_eq!(res, Ok(((8, 2, 4), 'a')));
         assert_eq!(parser.pos(), (9, 2, 5));
     }
 
@@ -764,7 +804,7 @@ mod tests {
     fn test_consume_char_with_unclosed_comment() {
         let mut parser = HtmlParser::new("<!-- a");
         let res = parser.consume_char();
-        assert_eq!(res, Ok('<'));
+        assert_eq!(res, Ok(((0, 1, 1), '<')));
         assert_eq!(parser.pos(), (1, 1, 2));
     }
 
@@ -1269,7 +1309,7 @@ mod tests {
 
     #[test]
     fn test_parse_text_node1() {
-        let mut parser = HtmlParser::new("<html>hello</html>");
+        let mut parser = HtmlParser::new("<html>hello</html>  ");
         let res = parser.parse_node();
         assert_eq!(
             res,
@@ -1415,5 +1455,16 @@ mod tests {
             ))
         );
         assert_eq!(parser.pos(), (0, 1, 1));
+    }
+
+    #[test]
+    fn test_parse_with_comment1() {
+        let mut parser = HtmlParser::new("<ht<!-- -->ml></html>  ");
+        let res = parser.parse_node();
+        assert_eq!(
+            res,
+            Ok(DomNode::new(NodeType::Html, vec![], (0, 1, 1), vec![]))
+        );
+        assert_eq!(parser.pos(), (21, 1, 22));
     }
 }
