@@ -193,11 +193,14 @@ impl HtmlParser {
         }
     }
 
-    fn peek_char(&self) -> ParserResult<char> {
+    fn peek_char(&mut self) -> ParserResult<(Pos, char)> {
         // This code looks bad...
         // Check for comment
         let mut in_comment = false;
+        let start_pos = self.pos();
         let mut index = self.index;
+        let mut row = self.row;
+        let mut col = self.col;
         while self.get_ch(index)
             .and_then(|ch| {
                 if ch == '<' {
@@ -236,6 +239,7 @@ impl HtmlParser {
             in_comment = true;
             let mut found_end = false;
             index += 4;
+            col += 4;
             while index < self.input.len() {
                 if self.get_ch(index)
                     .and_then(|ch| {
@@ -266,45 +270,65 @@ impl HtmlParser {
                     found_end = true;
                     break;
                 } else {
+                    match self.get_ch(index) {
+                        Ok('\n') => {
+                            row += 1;
+                            col = 1;
+                        }
+                        _ => col += 1,
+                    }
                     index += 1;
                 }
             }
             if found_end {
                 index += 3;
+                col += 3;
                 in_comment = false;
             }
         }
         if in_comment {
-            index = self.index;
+            // reached EOF without finding comment close; consume as regular text
+            index = start_pos.0;
+            row = start_pos.1;
+            col = start_pos.2;
         }
-        self.get_ch(index)
+        match self.get_ch(index) {
+            Ok(ch) => Ok(((index, row, col), ch)),
+            Err(Error::Eof(_)) => Err(Error::Eof((index, row, col))),
+            Err(_) => unreachable!(),
+        }
     }
 
     fn consume_whitespace(&mut self) -> ParserResult<()> {
-        let start_pos = self.pos();
-        if self.index >= self.input.len() {
-            return Err(Error::Eof(start_pos));
-        }
-        while self.index < self.input.len() && self.input[self.index].is_ascii_whitespace() {
-            match self.input[self.index] {
-                ' ' | '\t' => self.col += 1,
-                '\n' => {
-                    self.row += 1;
-                    self.col = 1;
+        let mut found_whitespace = false;
+        loop {
+            match self.peek_char() {
+                Ok((pos, ch)) => if ch.is_ascii_whitespace() {
+                    match ch {
+                        ' ' | '\t' | '\n' => {
+                            found_whitespace = true;
+                            self.consume_char()?
+                        }
+                        _ => {
+                            return Err(Error::Unexpected(
+                                pos,
+                                format!("unsupported whitespace char: {}", self.input[self.index])
+                                    .to_string(),
+                            ))
+                        }
+                    }
+                } else {
+                    return Ok(());
+                },
+                Err(err) => {
+                    if !found_whitespace {
+                        return Err(err);
+                    } else {
+                        return Ok(());
+                    }
                 }
-                _ => {
-                    let cur_pos = self.pos();
-                    self.set_pos(start_pos);
-                    return Err(Error::Unexpected(
-                        cur_pos,
-                        format!("unsupported whitespace char: {}", self.input[self.index])
-                            .to_string(),
-                    ));
-                }
-            }
-            self.index += 1;
+            };
         }
-        Ok(())
     }
 
     fn parse_identifier(&mut self) -> ParserResult<Token> {
@@ -314,24 +338,44 @@ impl HtmlParser {
 
     fn parse_identifier_strict(&mut self) -> ParserResult<Token> {
         let start_pos = self.pos();
-        if self.index >= self.input.len() {
-            return Err(Error::Eof(self.pos()));
+        let mut id: Vec<char> = vec![];
+        match self.peek_char() {
+            Ok((_, ch)) => if ch.is_ascii_alphabetic() {
+                id.push(ch);
+                self.consume_char()?;
+            } else {
+                return Err(Error::Unexpected(
+                    start_pos,
+                    "expected identifier".to_string(),
+                ));
+            },
+            Err(_) => {
+                return Err(Error::Unexpected(
+                    start_pos,
+                    "expected identifier".to_string(),
+                ))
+            }
         }
-        if !self.input[self.index].is_ascii_alphabetic() {
-            return Err(Error::Unexpected(
-                self.pos(),
+        loop {
+            match self.peek_char() {
+                Ok((_, ch)) => if ch.is_ascii_alphanumeric() {
+                    id.push(ch);
+                    self.consume_char()?;
+                } else {
+                    break;
+                },
+                Err(_) => break,
+            }
+        }
+        if id.is_empty() {
+            self.set_pos(start_pos);
+            Err(Error::Unexpected(
+                start_pos,
                 "expected identifier".to_string(),
-            ));
+            ))
+        } else {
+            Ok(Token::Identifier(start_pos, id.into_iter().collect()))
         }
-        let mut id: Vec<char> = vec![self.input[self.index]];
-        self.index += 1;
-        self.col += 1;
-        while self.index < self.input.len() && self.input[self.index].is_ascii_alphanumeric() {
-            id.push(self.input[self.index]);
-            self.index += 1;
-            self.col += 1;
-        }
-        Ok(Token::Identifier(start_pos, id.into_iter().collect()))
     }
 
     // Returned position is the start of the first quote char. String returned in Token::Str enum does not include quotes.
@@ -729,52 +773,51 @@ mod tests {
 
     #[test]
     fn test_peek_char1() {
-        let parser = HtmlParser::new("a");
+        let mut parser = HtmlParser::new("a");
         let res = parser.peek_char();
-        assert_eq!(res, Ok('a'));
+        assert_eq!(res, Ok(((0, 1, 1), 'a')));
     }
 
     #[test]
     fn test_peek_char_eof() {
-        let parser = HtmlParser::new("");
+        let mut parser = HtmlParser::new("");
         let res = parser.peek_char();
         assert_eq!(res, Err(Error::Eof((0, 1, 1))));
     }
 
     #[test]
     fn test_peek_char_eof_with_comment() {
-        let parser = HtmlParser::new("<!---->");
+        let mut parser = HtmlParser::new("<!---->");
         let res = parser.peek_char();
-        // parser doesn't get mutated, so the pos remains as (0, 1, 1)
-        assert_eq!(res, Err(Error::Eof((0, 1, 1))));
+        assert_eq!(res, Err(Error::Eof((7, 1, 8))));
     }
 
     #[test]
     fn test_peek_char_with_comment1() {
-        let parser = HtmlParser::new("<!---->a");
+        let mut parser = HtmlParser::new("<!---->a");
         let res = parser.peek_char();
-        assert_eq!(res, Ok('a'));
+        assert_eq!(res, Ok(((7, 1, 8), 'a')));
     }
 
     #[test]
     fn test_peek_char_with_fake_comment() {
-        let parser = HtmlParser::new("<!- --->a");
+        let mut parser = HtmlParser::new("<!- --->a");
         let res = parser.peek_char();
-        assert_eq!(res, Ok('<'));
+        assert_eq!(res, Ok(((0, 1, 1), '<')));
     }
 
     #[test]
     fn test_peek_char_with_newline_in_comment() {
-        let parser = HtmlParser::new("<!--\n-->a");
+        let mut parser = HtmlParser::new("<!--\n-->a");
         let res = parser.peek_char();
-        assert_eq!(res, Ok('a'));
+        assert_eq!(res, Ok(((8, 2, 4), 'a')));
     }
 
     #[test]
     fn test_peek_char_with_unclosed_comment() {
-        let parser = HtmlParser::new("<!-- a");
+        let mut parser = HtmlParser::new("<!-- a");
         let res = parser.peek_char();
-        assert_eq!(res, Ok('<'));
+        assert_eq!(res, Ok(((0, 1, 1), '<')));
     }
 
     #[test]
@@ -791,6 +834,22 @@ mod tests {
         let res = parser.consume_whitespace();
         assert_eq!(res, Ok(()));
         assert_eq!(parser.pos(), (0, 1, 1));
+    }
+
+    #[test]
+    fn test_consume_whitespace_with_comment1() {
+        let mut parser = HtmlParser::new("<!-- --> ");
+        let res = parser.consume_whitespace();
+        assert_eq!(res, Ok(()));
+        assert_eq!(parser.pos(), (9, 1, 10));
+    }
+
+    #[test]
+    fn test_consume_whitespace_with_comment2() {
+        let mut parser = HtmlParser::new("<!--\n--> ");
+        let res = parser.consume_whitespace();
+        assert_eq!(res, Ok(()));
+        assert_eq!(parser.pos(), (9, 2, 5));
     }
 
     #[test]
@@ -815,6 +874,22 @@ mod tests {
         let res = parser.parse_identifier();
         assert_eq!(res, Ok(Token::Identifier((1, 1, 2), "asdf".to_string())));
         assert_eq!(parser.pos(), (5, 1, 6));
+    }
+
+    #[test]
+    fn test_parse_identifier_ignores_comments1() {
+        let mut parser = HtmlParser::new("<!-- --> asdf");
+        let res = parser.parse_identifier();
+        assert_eq!(res, Ok(Token::Identifier((9, 1, 10), "asdf".to_string())));
+        assert_eq!(parser.pos(), (13, 1, 14));
+    }
+
+    #[test]
+    fn test_parse_identifier_ignores_comments2() {
+        let mut parser = HtmlParser::new(" a<!--\n-->sdf");
+        let res = parser.parse_identifier();
+        assert_eq!(res, Ok(Token::Identifier((1, 1, 2), "asdf".to_string())));
+        assert_eq!(parser.pos(), (13, 2, 7));
     }
 
     #[test]
