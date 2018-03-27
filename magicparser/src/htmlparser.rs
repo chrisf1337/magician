@@ -76,6 +76,210 @@ impl HtmlParser {
         (self.index, self.row, self.col)
     }
 
+    fn get_ch(&self, i: usize) -> ParserResult<char> {
+        if i >= self.input.len() {
+            return Err(Error::Eof(self.pos()));
+        }
+        return Ok(self.input[i]);
+    }
+
+    fn consume_char(&mut self) -> ParserResult<char> {
+        // This code looks bad...
+        // Check for comment
+        let mut in_comment = false;
+        let start_pos = self.pos();
+        while self.get_ch(self.index)
+            .and_then(|ch| {
+                if ch == '<' {
+                    self.get_ch(self.index + 1)
+                } else {
+                    Err(Error::Eof(self.pos()))
+                }
+            })
+            .and_then(|ch| {
+                if ch == '!' {
+                    self.get_ch(self.index + 2)
+                } else {
+                    // dummy value; I just need an error here
+                    Err(Error::Eof(self.pos()))
+                }
+            })
+            .and_then(|ch| {
+                if ch == '-' {
+                    self.get_ch(self.index + 3)
+                } else {
+                    // dummy value; I just need an error here
+                    Err(Error::Eof(self.pos()))
+                }
+            })
+            .and_then(|ch| {
+                if ch == '-' {
+                    Ok(())
+                } else {
+                    // dummy value; I just need an error here
+                    Err(Error::Eof(self.pos()))
+                }
+            })
+            .is_ok()
+        {
+            // Look for the end of the comment
+            in_comment = true;
+            let mut found_end = false;
+            self.index += 4;
+            self.col += 4;
+            while self.index < self.input.len() {
+                if self.get_ch(self.index)
+                    .and_then(|ch| {
+                        if ch == '-' {
+                            self.get_ch(self.index + 1)
+                        } else {
+                            Err(Error::Eof(self.pos()))
+                        }
+                    })
+                    .and_then(|ch| {
+                        if ch == '-' {
+                            self.get_ch(self.index + 2)
+                        } else {
+                            // dummy value; I just need an error here
+                            Err(Error::Eof(self.pos()))
+                        }
+                    })
+                    .and_then(|ch| {
+                        if ch == '>' {
+                            Ok(())
+                        } else {
+                            // dummy value; I just need an error here
+                            Err(Error::Eof(self.pos()))
+                        }
+                    })
+                    .is_ok()
+                {
+                    found_end = true;
+                    break;
+                } else {
+                    match self.get_ch(self.index) {
+                        Ok('\n') => {
+                            self.row += 1;
+                            self.col = 1;
+                        }
+                        _ => self.col += 1,
+                    }
+                    self.index += 1;
+                }
+            }
+            if found_end {
+                self.index += 3;
+                self.col += 3;
+                in_comment = false;
+            }
+        }
+        if in_comment {
+            // reached EOF without finding comment close; consume as regular text
+            self.set_pos(start_pos);
+        }
+        match self.get_ch(self.index) {
+            ok @ Ok('\n') => {
+                self.index += 1;
+                self.row += 1;
+                self.col = 1;
+                ok
+            }
+            ok @ Ok(_) => {
+                self.index += 1;
+                self.col += 1;
+                ok
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    fn peek_char(&self) -> ParserResult<char> {
+        // This code looks bad...
+        // Check for comment
+        let mut in_comment = false;
+        let mut index = self.index;
+        while self.get_ch(index)
+            .and_then(|ch| {
+                if ch == '<' {
+                    self.get_ch(index + 1)
+                } else {
+                    Err(Error::Eof(self.pos()))
+                }
+            })
+            .and_then(|ch| {
+                if ch == '!' {
+                    self.get_ch(index + 2)
+                } else {
+                    // dummy value; I just need an error here
+                    Err(Error::Eof(self.pos()))
+                }
+            })
+            .and_then(|ch| {
+                if ch == '-' {
+                    self.get_ch(index + 3)
+                } else {
+                    // dummy value; I just need an error here
+                    Err(Error::Eof(self.pos()))
+                }
+            })
+            .and_then(|ch| {
+                if ch == '-' {
+                    Ok(())
+                } else {
+                    // dummy value; I just need an error here
+                    Err(Error::Eof(self.pos()))
+                }
+            })
+            .is_ok()
+        {
+            // Look for the end of the comment
+            in_comment = true;
+            let mut found_end = false;
+            index += 4;
+            while index < self.input.len() {
+                if self.get_ch(index)
+                    .and_then(|ch| {
+                        if ch == '-' {
+                            self.get_ch(index + 1)
+                        } else {
+                            Err(Error::Eof(self.pos()))
+                        }
+                    })
+                    .and_then(|ch| {
+                        if ch == '-' {
+                            self.get_ch(index + 2)
+                        } else {
+                            // dummy value; I just need an error here
+                            Err(Error::Eof(self.pos()))
+                        }
+                    })
+                    .and_then(|ch| {
+                        if ch == '>' {
+                            Ok(())
+                        } else {
+                            // dummy value; I just need an error here
+                            Err(Error::Eof(self.pos()))
+                        }
+                    })
+                    .is_ok()
+                {
+                    found_end = true;
+                    break;
+                } else {
+                    index += 1;
+                }
+            }
+            if found_end {
+                index += 3;
+                in_comment = false;
+            }
+        }
+        if in_comment {
+            index = self.index;
+        }
+        self.get_ch(index)
+    }
+
     fn consume_whitespace(&mut self) -> ParserResult<()> {
         let start_pos = self.pos();
         if self.index >= self.input.len() {
@@ -468,6 +672,112 @@ mod tests {
     use std::path::Path;
 
     #[test]
+    fn test_consume_char1() {
+        let mut parser = HtmlParser::new("a");
+        let res = parser.consume_char();
+        assert_eq!(res, Ok('a'));
+        assert_eq!(parser.pos(), (1, 1, 2));
+    }
+
+    #[test]
+    fn test_consume_char_eof() {
+        let mut parser = HtmlParser::new("");
+        let res = parser.consume_char();
+        assert_eq!(res, Err(Error::Eof((0, 1, 1))));
+        assert_eq!(parser.pos(), (0, 1, 1));
+    }
+
+    #[test]
+    fn test_consume_char_eof_with_comment() {
+        let mut parser = HtmlParser::new("<!---->");
+        let res = parser.consume_char();
+        assert_eq!(res, Err(Error::Eof((7, 1, 8))));
+        assert_eq!(parser.pos(), (7, 1, 8));
+    }
+
+    #[test]
+    fn test_consume_char_with_comment1() {
+        let mut parser = HtmlParser::new("<!---->a");
+        let res = parser.consume_char();
+        assert_eq!(res, Ok('a'));
+        assert_eq!(parser.pos(), (8, 1, 9));
+    }
+
+    #[test]
+    fn test_consume_char_with_fake_comment() {
+        let mut parser = HtmlParser::new("<!- --->a");
+        let res = parser.consume_char();
+        assert_eq!(res, Ok('<'));
+        assert_eq!(parser.pos(), (1, 1, 2));
+    }
+
+    #[test]
+    fn test_consume_char_with_newline_in_comment() {
+        let mut parser = HtmlParser::new("<!--\n-->a");
+        let res = parser.consume_char();
+        assert_eq!(res, Ok('a'));
+        assert_eq!(parser.pos(), (9, 2, 5));
+    }
+
+    #[test]
+    fn test_consume_char_with_unclosed_comment() {
+        let mut parser = HtmlParser::new("<!-- a");
+        let res = parser.consume_char();
+        assert_eq!(res, Ok('<'));
+        assert_eq!(parser.pos(), (1, 1, 2));
+    }
+
+    #[test]
+    fn test_peek_char1() {
+        let parser = HtmlParser::new("a");
+        let res = parser.peek_char();
+        assert_eq!(res, Ok('a'));
+    }
+
+    #[test]
+    fn test_peek_char_eof() {
+        let parser = HtmlParser::new("");
+        let res = parser.peek_char();
+        assert_eq!(res, Err(Error::Eof((0, 1, 1))));
+    }
+
+    #[test]
+    fn test_peek_char_eof_with_comment() {
+        let parser = HtmlParser::new("<!---->");
+        let res = parser.peek_char();
+        // parser doesn't get mutated, so the pos remains as (0, 1, 1)
+        assert_eq!(res, Err(Error::Eof((0, 1, 1))));
+    }
+
+    #[test]
+    fn test_peek_char_with_comment1() {
+        let parser = HtmlParser::new("<!---->a");
+        let res = parser.peek_char();
+        assert_eq!(res, Ok('a'));
+    }
+
+    #[test]
+    fn test_peek_char_with_fake_comment() {
+        let parser = HtmlParser::new("<!- --->a");
+        let res = parser.peek_char();
+        assert_eq!(res, Ok('<'));
+    }
+
+    #[test]
+    fn test_peek_char_with_newline_in_comment() {
+        let parser = HtmlParser::new("<!--\n-->a");
+        let res = parser.peek_char();
+        assert_eq!(res, Ok('a'));
+    }
+
+    #[test]
+    fn test_peek_char_with_unclosed_comment() {
+        let parser = HtmlParser::new("<!-- a");
+        let res = parser.peek_char();
+        assert_eq!(res, Ok('<'));
+    }
+
+    #[test]
     fn test_consume_whitespace1() {
         let mut parser = HtmlParser::new(" ab");
         let res = parser.consume_whitespace();
@@ -690,6 +1000,17 @@ mod tests {
         let res = parser.parse_tag_attributes();
         assert_eq!(res, Ok(vec![]));
         assert_eq!(parser.pos(), (0, 1, 1));
+    }
+
+    #[test]
+    fn test_parse_tag_attributes_early_termination3() {
+        let mut parser = HtmlParser::new("a b=");
+        let res = parser.parse_tag_attributes();
+        assert_eq!(
+            res,
+            Ok(vec![(Token::Identifier((0, 1, 1), "a".to_string()), None)])
+        );
+        assert_eq!(parser.pos(), (2, 1, 3));
     }
 
     #[test]
