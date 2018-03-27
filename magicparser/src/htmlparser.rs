@@ -1,13 +1,15 @@
+use std::fmt::Debug;
+
 type Pos = (usize, usize, usize); // index, row, col
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Token {
     Str(Pos, String),        // "..." or '...' (no support for quoted entities)
     Identifier(Pos, String), // ascii string starting with a letter
     Number(Pos, i32),        // number
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum NodeType {
     Html,
     Text,
@@ -16,7 +18,7 @@ pub enum NodeType {
     Img,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct DomNode {
     pub node_type: NodeType,
     pub attrs: Vec<(Token, Option<Token>)>,
@@ -223,108 +225,16 @@ impl HtmlParser {
     }
 
     fn peek_char(&mut self) -> ParserResult<(Pos, char)> {
-        // This code looks bad...
-        // Check for comment
-        let mut in_comment = false;
         let start_pos = self.pos();
-        let mut index = start_pos.0;
-        let mut row = start_pos.1;
-        let mut col = start_pos.2;
-        while self.get_ch(index)
-            .and_then(|ch| {
-                if ch == '<' {
-                    self.get_ch(index + 1)
-                } else {
-                    Err(Error::Eof(self.pos()))
-                }
-            })
-            .and_then(|ch| {
-                if ch == '!' {
-                    self.get_ch(index + 2)
-                } else {
-                    // dummy value; I just need an error here
-                    Err(Error::Eof(self.pos()))
-                }
-            })
-            .and_then(|ch| {
-                if ch == '-' {
-                    self.get_ch(index + 3)
-                } else {
-                    // dummy value; I just need an error here
-                    Err(Error::Eof(self.pos()))
-                }
-            })
-            .and_then(|ch| {
-                if ch == '-' {
-                    Ok(())
-                } else {
-                    // dummy value; I just need an error here
-                    Err(Error::Eof(self.pos()))
-                }
-            })
-            .is_ok()
-        {
-            // Look for the end of the comment
-            in_comment = true;
-            let mut found_end = false;
-            index += 4;
-            col += 4;
-            while index < self.input.len() {
-                if self.get_ch(index)
-                    .and_then(|ch| {
-                        if ch == '-' {
-                            self.get_ch(index + 1)
-                        } else {
-                            Err(Error::Eof(self.pos()))
-                        }
-                    })
-                    .and_then(|ch| {
-                        if ch == '-' {
-                            self.get_ch(index + 2)
-                        } else {
-                            // dummy value; I just need an error here
-                            Err(Error::Eof(self.pos()))
-                        }
-                    })
-                    .and_then(|ch| {
-                        if ch == '>' {
-                            Ok(())
-                        } else {
-                            // dummy value; I just need an error here
-                            Err(Error::Eof(self.pos()))
-                        }
-                    })
-                    .is_ok()
-                {
-                    found_end = true;
-                    break;
-                } else {
-                    match self.get_ch(index) {
-                        Ok('\n') => {
-                            row += 1;
-                            col = 1;
-                        }
-                        _ => col += 1,
-                    }
-                    index += 1;
-                }
+        match self.consume_char() {
+            Ok((pos, ch)) => {
+                self.set_pos(start_pos);
+                Ok((pos, ch))
             }
-            if found_end {
-                index += 3;
-                col += 3;
-                in_comment = false;
+            Err(err) => {
+                self.set_pos(start_pos);
+                Err(err)
             }
-        }
-        if in_comment {
-            // reached EOF without finding comment close; consume as regular text
-            index = start_pos.0;
-            row = start_pos.1;
-            col = start_pos.2;
-        }
-        match self.get_ch(index) {
-            Ok(ch) => Ok(((index, row, col), ch)),
-            Err(Error::Eof(_)) => Err(Error::Eof((index, row, col))),
-            Err(_) => unreachable!(),
         }
     }
 
@@ -392,7 +302,6 @@ impl HtmlParser {
             }
         }
         if id.is_empty() {
-            self.set_pos(start_pos);
             Err(Error::Unexpected(
                 start_pos,
                 "expected identifier".to_string(),
@@ -404,22 +313,20 @@ impl HtmlParser {
 
     // Returned position is the start of the first quote char. String returned in Token::Str enum does not include quotes.
     fn parse_string(&mut self) -> ParserResult<Token> {
-        let start_pos = self.pos();
         let _ = self.consume_whitespace()?;
 
         let mut st: Vec<char> = vec![];
-        let quote = match self.peek_char() {
+        let (str_start_pos, quote) = match self.peek_char() {
             Ok((pos, ch)) => if ch != '\'' && ch != '"' {
                 return Err(Error::Unexpected(pos, "expected quote".to_string()));
             } else {
-                self.consume_char()?.1
+                self.consume_char()?
             },
             Err(err) => return Err(err),
         };
         loop {
             match self.peek_char() {
                 Ok((pos, ch)) => if ch == '\n' {
-                    self.set_pos(start_pos);
                     return Err(Error::Unexpected(
                         pos,
                         "unexpected newline in string".to_string(),
@@ -434,16 +341,14 @@ impl HtmlParser {
         }
 
         if self.index == self.input.len() {
-            let cur_pos = self.pos();
-            self.set_pos(start_pos);
             Err(Error::Unexpected(
-                cur_pos,
+                self.pos(),
                 "unexpected EOF when parsing string".to_string(),
             ))
         } else {
             // end of string
             self.consume_char()?;
-            Ok(Token::Str(start_pos, st.into_iter().collect()))
+            Ok(Token::Str(str_start_pos, st.into_iter().collect()))
         }
     }
 
@@ -472,7 +377,6 @@ impl HtmlParser {
             }
         }
         if id.is_empty() {
-            self.set_pos(start_pos);
             Err(Error::Unexpected(start_pos, "expected number".to_string()))
         } else {
             Ok(Token::Number(
@@ -488,13 +392,11 @@ impl HtmlParser {
     }
 
     fn parse_one_char_strict(&mut self, ch: char) -> ParserResult<Pos> {
-        let start_pos = self.pos();
         let (pos, c) = self.peek_char()?;
         if c == ch {
             self.consume_char()?;
             Ok(pos)
         } else {
-            self.set_pos(start_pos);
             Err(Error::Unexpected(
                 pos,
                 format!("expected {}, got {}", ch, self.input[self.index]).to_string(),
@@ -502,18 +404,34 @@ impl HtmlParser {
         }
     }
 
-    fn try_parse<T>(
-        &mut self,
-        parsers: &[fn(&mut Self) -> ParserResult<T>],
-        err_msg: &str,
-    ) -> ParserResult<T> {
+    fn try<T>(&mut self, parser: ParserFn<T>) -> ParserResult<T> {
+        let start_pos = self.pos();
+        match parser(self) {
+            ok @ Ok(_) => ok,
+            Err(err) => {
+                self.set_pos(start_pos);
+                Err(err)
+            }
+        }
+    }
+
+    fn try_parse<T: Debug>(&mut self, parsers: &[ParserFn<T>], err_msg: &str) -> ParserResult<T> {
         if parsers.is_empty() {
             return Err(Error::Unexpected(self.pos(), err_msg.to_string()));
         }
         let parser = parsers[0];
-        match parser(self) {
-            ok @ Ok(_) => ok,
-            Err(_) => self.try_parse(&parsers[1..], err_msg),
+        println!("{:?}", self.pos());
+        match self.try(parser) {
+            ok @ Ok(_) => {
+                println!("{:?}", ok);
+                println!("{:?}", self.pos());
+                ok
+            }
+            Err(err) => {
+                println!("{:?}", err);
+                println!("{:?}", self.pos());
+                self.try_parse(&parsers[1..], err_msg)
+            }
         }
     }
 
@@ -556,12 +474,10 @@ impl HtmlParser {
     }
 
     fn parse_opening_tag(&mut self) -> ParserResult<DomNode> {
-        let start_pos = self.pos();
         let tag_start_pos = self.parse_one_char('<')?;
         let tag_id = match self.parse_identifier_strict() {
             Ok(tag_id) => tag_id,
             Err(err) => {
-                self.set_pos(start_pos);
                 return Err(err);
             }
         };
@@ -570,7 +486,6 @@ impl HtmlParser {
             {
                 Some(node_type) => node_type,
                 None => {
-                    self.set_pos(start_pos);
                     return Err(Error::Unexpected(
                         tag_id_pos,
                         format!("unexpected node type: {}", tag_id_str).to_string(),
@@ -587,7 +502,6 @@ impl HtmlParser {
         match self.parse_one_char('>') {
             Ok(_) => (),
             Err(_) => {
-                self.set_pos(start_pos);
                 return Err(Error::Unexpected(
                     tag_start_pos,
                     format!("unclosed tag: {:?}", node_type),
@@ -598,7 +512,6 @@ impl HtmlParser {
     }
 
     fn parse_closing_tag(&mut self, opening_tag: DomNode) -> ParserResult<DomNode> {
-        let start_pos = self.pos();
         let tag_start_pos = self.parse_one_char('<')?;
         let _ = self.parse_one_char_strict('/')?;
         let tag_id = self.parse_identifier_strict()?;
@@ -607,7 +520,6 @@ impl HtmlParser {
             {
                 Some(node_type) => node_type,
                 None => {
-                    self.set_pos(start_pos);
                     return Err(Error::Unexpected(
                         tag_id_pos,
                         format!("unexpected node type: {}", tag_id_str).to_string(),
@@ -617,7 +529,6 @@ impl HtmlParser {
             _ => unreachable!(),
         };
         if opening_tag.node_type != node_type {
-            self.set_pos(start_pos);
             return Err(Error::Unexpected(
                 tag_start_pos,
                 format!(
@@ -645,7 +556,6 @@ impl HtmlParser {
             }
         }
         if text.is_empty() {
-            self.set_pos(start_pos);
             Err(Error::Unexpected(self.pos(), "empty text node".to_string()))
         } else {
             Ok(DomNode::new(NodeType::Text, vec![], start_pos, vec![]))
@@ -653,13 +563,12 @@ impl HtmlParser {
     }
 
     fn parse_node(&mut self) -> ParserResult<DomNode> {
-        let start_pos = self.pos();
-        let mut node = match self.parse_text_node() {
+        let mut node = match self.try(HtmlParser::parse_text_node) {
             Ok(node) => node,
-            Err(_) => match self.parse_opening_tag() {
+            Err(_) => match self.try(HtmlParser::parse_opening_tag) {
                 Ok(node) => node,
                 Err(err) => {
-                    self.set_pos(start_pos);
+                    println!("here");
                     return Err(err);
                 }
             },
@@ -669,7 +578,6 @@ impl HtmlParser {
             match self.consume_whitespace() {
                 Ok(_) => (),
                 Err(Error::Eof(_)) => {
-                    self.set_pos(start_pos);
                     return Err(Error::Unexpected(
                         node.pos,
                         format!("unclosed element: {:?}", node),
@@ -678,7 +586,6 @@ impl HtmlParser {
                 Err(e) => return Err(e),
             };
             if self.index >= self.input.len() {
-                self.set_pos(start_pos);
                 return Err(Error::Unexpected(
                     node.pos,
                     format!("unclosed element: {:?}", node),
@@ -688,18 +595,20 @@ impl HtmlParser {
                 Ok((_, chars)) => {
                     println!("{}", chars);
                     if chars == "</" {
-                        match self.parse_closing_tag(node) {
+                        match self.parse_closing_tag(node.clone()) {
                             ok @ Ok(_) => return ok,
-                            Err(err) => {
-                                self.set_pos(start_pos);
-                                return Err(err);
+                            Err(Error::Eof(_)) => {
+                                return Err(Error::Unexpected(
+                                    node.pos,
+                                    format!("unclosed element: {:?}", node),
+                                ));
                             }
+                            Err(err) => return Err(err),
                         }
                     } else if chars.chars().next().unwrap() == '<' {
                         let child_node = match self.parse_node() {
                             Ok(child_node) => child_node,
                             Err(err) => {
-                                self.set_pos(start_pos);
                                 return Err(err);
                             }
                         };
@@ -708,22 +617,19 @@ impl HtmlParser {
                         let text_node = match self.parse_text_node() {
                             Ok(text_node) => text_node,
                             Err(err) => {
-                                self.set_pos(start_pos);
                                 return Err(err);
                             }
                         };
                         node.children.push(text_node);
                     }
                 }
-                Err(err @ Error::Eof(_)) => {
-                    println!("{:?}", node);
-                    self.set_pos(start_pos);
-                    return Err(err);
+                Err(Error::Eof(_)) => {
+                    return Err(Error::Unexpected(
+                        node.pos,
+                        format!("unclosed element: {:?}", node),
+                    ));
                 }
-                Err(err) => {
-                    self.set_pos(start_pos);
-                    return Err(err);
-                }
+                Err(err) => return Err(err),
             }
         }
     }
@@ -944,6 +850,14 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_string_whitespace() {
+        let mut parser = HtmlParser::new("\n'abc'");
+        let res = parser.parse_string();
+        assert_eq!(res, Ok(Token::Str((1, 2, 1), "abc".to_string())));
+        assert_eq!(parser.pos(), (6, 2, 6));
+    }
+
+    #[test]
     fn test_parse_string_double_quote() {
         let mut parser = HtmlParser::new("\"asdf\"");
         let res = parser.parse_string();
@@ -970,7 +884,7 @@ mod tests {
                 "unexpected EOF when parsing string".to_string()
             ))
         );
-        assert_eq!(parser.pos(), (0, 1, 1));
+        assert_eq!(parser.pos(), (5, 1, 6));
     }
 
     #[test]
@@ -984,7 +898,7 @@ mod tests {
                 "unexpected EOF when parsing string".to_string()
             ))
         );
-        assert_eq!(parser.pos(), (0, 1, 1));
+        assert_eq!(parser.pos(), (6, 1, 7));
     }
 
     #[test]
@@ -1006,7 +920,7 @@ mod tests {
                 "unexpected EOF when parsing string".to_string()
             ))
         );
-        assert_eq!(parser.pos(), (0, 1, 1));
+        assert_eq!(parser.pos(), (17, 2, 10));
     }
 
     #[test]
@@ -1265,7 +1179,7 @@ mod tests {
                 "expected identifier".to_string()
             ))
         );
-        assert_eq!(parser.pos(), (0, 1, 1));
+        assert_eq!(parser.pos(), (1, 1, 2));
     }
 
     #[test]
@@ -1279,7 +1193,7 @@ mod tests {
                 format!("unclosed tag: {:?}", NodeType::Body).to_string()
             ))
         );
-        assert_eq!(parser.pos(), (0, 1, 1));
+        assert_eq!(parser.pos(), (13, 1, 14));
     }
 
     #[test]
@@ -1304,7 +1218,44 @@ mod tests {
                 "expected identifier".to_string()
             ))
         );
-        assert_eq!(parser.pos(), (0, 1, 1));
+        // parser stops at 6 because it try()s to parse the second < as an opening tag and fails
+        assert_eq!(parser.pos(), (6, 1, 7));
+    }
+
+    #[test]
+    fn test_parse_node_unclosed_tag1() {
+        let mut parser = HtmlParser::new("<html><");
+        let res = parser.parse_node();
+        assert_eq!(
+            res,
+            Err(Error::Unexpected(
+                (0, 1, 1),
+                format!(
+                    "unclosed element: {:?}",
+                    DomNode::new(NodeType::Html, vec![], (0, 1, 1), vec![])
+                ).to_string()
+            ))
+        );
+        assert_eq!(parser.pos(), (6, 1, 7));
+    }
+
+    #[test]
+    fn test_parse_node_unclosed_tag2() {
+        let mut parser = HtmlParser::new("<html></");
+        let res = parser.parse_node();
+        assert_eq!(
+            res,
+            Err(Error::Unexpected(
+                (0, 1, 1),
+                format!(
+                    "unclosed element: {:?}",
+                    DomNode::new(NodeType::Html, vec![], (0, 1, 1), vec![])
+                ).to_string()
+            ))
+        );
+        // parser stops at 8 because it sees </ as the start of a closing tag
+        // and enters parse_closing_tag()
+        assert_eq!(parser.pos(), (8, 1, 9));
     }
 
     #[test]
@@ -1418,7 +1369,7 @@ mod tests {
                 )
             ))
         );
-        assert_eq!(parser.pos(), (0, 1, 1));
+        assert_eq!(parser.pos(), (6, 1, 7));
     }
 
     #[test]
@@ -1436,7 +1387,9 @@ mod tests {
                 )
             ))
         );
-        assert_eq!(parser.pos(), (0, 1, 1));
+        // terminates at 12 since we check for paired tags as soon as the
+        // identifier for the closing tag has been parsed
+        assert_eq!(parser.pos(), (12, 1, 13));
     }
 
     #[test]
@@ -1454,7 +1407,7 @@ mod tests {
                 )
             ))
         );
-        assert_eq!(parser.pos(), (0, 1, 1));
+        assert_eq!(parser.pos(), (38, 1, 39));
     }
 
     #[test]
