@@ -53,7 +53,7 @@ pub struct HtmlParser {
     col: usize,
 }
 
-type ParserResult<T> = Result<(T, Pos), Error>;
+type ParserResult<T> = Result<T, Error>;
 type ParserFn<T> = fn(&mut HtmlParser) -> ParserResult<T>;
 
 impl HtmlParser {
@@ -100,7 +100,7 @@ impl HtmlParser {
             }
             self.index += 1;
         }
-        Ok(((), self.pos()))
+        Ok(())
     }
 
     fn parse_identifier(&mut self) -> ParserResult<Token> {
@@ -127,10 +127,7 @@ impl HtmlParser {
             self.index += 1;
             self.col += 1;
         }
-        Ok((
-            Token::Identifier(start_pos, id.into_iter().collect()),
-            self.pos(),
-        ))
+        Ok(Token::Identifier(start_pos, id.into_iter().collect()))
     }
 
     // Returned position is the start of the first quote char. String returned in Token::Str enum does not include quotes.
@@ -145,7 +142,6 @@ impl HtmlParser {
         }
         let quote = self.input[self.index];
         let mut st: Vec<char> = vec![];
-        let start_pos = self.pos();
         self.index += 1;
         self.col += 1;
         while self.index < self.input.len() && self.input[self.index] != quote {
@@ -173,7 +169,7 @@ impl HtmlParser {
             // end of string
             self.index += 1;
             self.col += 1;
-            Ok((Token::Str(start_pos, st.into_iter().collect()), self.pos()))
+            Ok(Token::Str(start_pos, st.into_iter().collect()))
         }
     }
 
@@ -194,12 +190,9 @@ impl HtmlParser {
             self.index += 1;
             self.col += 1;
         }
-        Ok((
-            Token::Number(
-                start_pos,
-                id.into_iter().collect::<String>().parse::<i32>().unwrap(),
-            ),
-            self.pos(),
+        Ok(Token::Number(
+            start_pos,
+            id.into_iter().collect::<String>().parse::<i32>().unwrap(),
         ))
     }
 
@@ -213,7 +206,7 @@ impl HtmlParser {
         if self.input[self.index] == ch {
             self.index += 1;
             self.col += 1;
-            Ok(((), self.pos()))
+            Ok(())
         } else {
             let cur_pos = self.pos();
             self.set_pos(start_pos);
@@ -240,37 +233,38 @@ impl HtmlParser {
     }
 
     fn parse_tag_attributes(&mut self) -> ParserResult<Vec<(Token, Option<Token>)>> {
+        // roll back to next_start_pos if we parse an incomplete pair
         let mut next_start_pos = self.pos();
         let mut attributes: Vec<(Token, Option<Token>)> = vec![];
         loop {
             match self.parse_identifier() {
-                Ok((id, _)) => match self.parse_one_char('=') {
-                    Ok(((), _)) => {
+                Ok(id) => match self.parse_one_char('=') {
+                    Ok(()) => {
                         let parsers: Vec<ParserFn<Token>> = vec![
                             Self::parse_identifier,
                             Self::parse_string,
                             Self::parse_number,
                         ];
                         match self.try_parse(&parsers[..], "expected attribute value") {
-                            Ok((val_token, new_pos)) => {
+                            Ok(val_token) => {
                                 attributes.push((id, Some(val_token)));
-                                next_start_pos = new_pos;
+                                next_start_pos = self.pos();
                             }
                             Err(_) => {
-                                self.index = next_start_pos.0;
-                                self.row = next_start_pos.1;
-                                self.col = next_start_pos.2;
-                                return Ok((attributes, self.pos()));
+                                self.set_pos(next_start_pos);
+                                return Ok(attributes);
                             }
                         }
                     }
                     Err(_) => {
                         // no =, so the attribute doesn't have a value
                         attributes.push((id, None));
+                        // successfully parsed a pair, so update next_start_pos
+                        next_start_pos = self.pos();
                     }
                 },
                 Err(_) => {
-                    return Ok((attributes, self.pos()));
+                    return Ok(attributes);
                 }
             }
         }
@@ -281,7 +275,7 @@ impl HtmlParser {
         let _ = self.parse_one_char('<')?;
         let tag_start_pos = (self.index - 1, self.row, self.col - 1);
         let tag_id = match self.parse_identifier_strict() {
-            Ok((tag_id, _)) => tag_id,
+            Ok(tag_id) => tag_id,
             Err(err) => {
                 self.set_pos(start_pos);
                 return Err(err);
@@ -301,11 +295,11 @@ impl HtmlParser {
             },
             _ => unreachable!(),
         };
-        let self_closing = match node_type {
-            NodeType::Img => true,
-            _ => false,
-        };
-        let (attrs, _) = self.parse_tag_attributes()?;
+        // let self_closing = match node_type {
+        //     NodeType::Img => true,
+        //     _ => false,
+        // };
+        let attrs = self.parse_tag_attributes()?;
         match self.parse_one_char('>') {
             Ok(_) => (),
             Err(_) => {
@@ -316,10 +310,7 @@ impl HtmlParser {
                 ));
             }
         };
-        Ok((
-            DomNode::new(node_type, attrs, tag_start_pos, vec![]),
-            self.pos(),
-        ))
+        Ok(DomNode::new(node_type, attrs, tag_start_pos, vec![]))
     }
 
     fn parse_closing_tag(&mut self, opening_tag: DomNode) -> ParserResult<DomNode> {
@@ -327,7 +318,7 @@ impl HtmlParser {
         let _ = self.parse_one_char('<')?;
         let tag_start_pos = (self.index - 1, self.row, self.col - 1);
         let _ = self.parse_one_char_strict('/')?;
-        let (tag_id, _) = self.parse_identifier_strict()?;
+        let tag_id = self.parse_identifier_strict()?;
         let node_type = match tag_id {
             Token::Identifier(tag_id_pos, tag_id_str) => match tag_id_str_to_node_type(&tag_id_str)
             {
@@ -353,7 +344,7 @@ impl HtmlParser {
             ));
         }
         let _ = self.parse_one_char('>')?;
-        Ok((opening_tag, self.pos()))
+        Ok(opening_tag)
     }
 
     fn parse_text_node(&mut self) -> ParserResult<DomNode> {
@@ -375,19 +366,16 @@ impl HtmlParser {
             self.set_pos(start_pos);
             Err(Error::Unexpected(self.pos(), "empty text node".to_string()))
         } else {
-            Ok((
-                DomNode::new(NodeType::Text, vec![], start_pos, vec![]),
-                self.pos(),
-            ))
+            Ok(DomNode::new(NodeType::Text, vec![], start_pos, vec![]))
         }
     }
 
     fn parse_node(&mut self) -> ParserResult<DomNode> {
         let start_pos = self.pos();
         let mut node = match self.parse_text_node() {
-            Ok((node, _)) => node,
+            Ok(node) => node,
             Err(_) => match self.parse_opening_tag() {
-                Ok((node, _)) => node,
+                Ok(node) => node,
                 Err(err) => {
                     self.set_pos(start_pos);
                     return Err(err);
@@ -433,7 +421,7 @@ impl HtmlParser {
                         }
                     }
                     let child_node = match self.parse_node() {
-                        Ok((child_node, _)) => child_node,
+                        Ok(child_node) => child_node,
                         Err(err) => {
                             self.set_pos(start_pos);
                             return Err(err);
@@ -443,7 +431,7 @@ impl HtmlParser {
                 }
                 _ => {
                     let text_node = match self.parse_text_node() {
-                        Ok((text_node, _)) => text_node,
+                        Ok(text_node) => text_node,
                         Err(err) => {
                             self.set_pos(start_pos);
                             return Err(err);
@@ -457,7 +445,7 @@ impl HtmlParser {
 
     pub fn parse(input: &str) -> Result<DomNode, Error> {
         let mut parser = HtmlParser::new(input);
-        let (node, _) = parser.parse_node()?;
+        let node = parser.parse_node()?;
         Ok(node)
     }
 }
@@ -483,49 +471,40 @@ mod tests {
     fn test_consume_whitespace1() {
         let mut parser = HtmlParser::new(" ab");
         let res = parser.consume_whitespace();
-        assert_eq!(res, Ok(((), (1, 1, 2))));
-        assert_eq!(parser.pos(), res.unwrap().1);
+        assert_eq!(res, Ok(()));
+        assert_eq!(parser.pos(), (1, 1, 2));
     }
 
     #[test]
     fn test_consume_whitespace2() {
         let mut parser = HtmlParser::new("ab");
         let res = parser.consume_whitespace();
-        assert_eq!(res, Ok(((), (0, 1, 1))));
-        assert_eq!(parser.pos(), res.unwrap().1);
+        assert_eq!(res, Ok(()));
+        assert_eq!(parser.pos(), (0, 1, 1));
     }
 
     #[test]
     fn test_parse_identifier1() {
         let mut parser = HtmlParser::new("asdf");
         let res = parser.parse_identifier();
-        assert_eq!(
-            res,
-            Ok((Token::Identifier((0, 1, 1), "asdf".to_string()), (4, 1, 5)))
-        );
-        assert_eq!(parser.pos(), res.unwrap().1);
+        assert_eq!(res, Ok(Token::Identifier((0, 1, 1), "asdf".to_string())));
+        assert_eq!(parser.pos(), (4, 1, 5));
     }
 
     #[test]
     fn test_parse_identifier2() {
         let mut parser = HtmlParser::new("a1s2f");
         let res = parser.parse_identifier();
-        assert_eq!(
-            res,
-            Ok((Token::Identifier((0, 1, 1), "a1s2f".to_string()), (5, 1, 6)))
-        );
-        assert_eq!(parser.pos(), res.unwrap().1);
+        assert_eq!(res, Ok(Token::Identifier((0, 1, 1), "a1s2f".to_string())));
+        assert_eq!(parser.pos(), (5, 1, 6));
     }
 
     #[test]
     fn test_parse_identifier_ignores_whitespace() {
         let mut parser = HtmlParser::new(" asdf");
         let res = parser.parse_identifier();
-        assert_eq!(
-            res,
-            Ok((Token::Identifier((1, 1, 2), "asdf".to_string()), (5, 1, 6)))
-        );
-        assert_eq!(parser.pos(), res.unwrap().1);
+        assert_eq!(res, Ok(Token::Identifier((1, 1, 2), "asdf".to_string())));
+        assert_eq!(parser.pos(), (5, 1, 6));
     }
 
     #[test]
@@ -546,22 +525,16 @@ mod tests {
     fn test_parse_string_double_quote() {
         let mut parser = HtmlParser::new("\"asdf\"");
         let res = parser.parse_string();
-        assert_eq!(
-            res,
-            Ok((Token::Str((0, 1, 1), "asdf".to_string()), (6, 1, 7)))
-        );
-        assert_eq!(parser.pos(), res.unwrap().1);
+        assert_eq!(res, Ok(Token::Str((0, 1, 1), "asdf".to_string())));
+        assert_eq!(parser.pos(), (6, 1, 7));
     }
 
     #[test]
     fn test_parse_string_single_quote() {
         let mut parser = HtmlParser::new("'asdf'");
         let res = parser.parse_string();
-        assert_eq!(
-            res,
-            Ok((Token::Str((0, 1, 1), "asdf".to_string()), (6, 1, 7)))
-        );
-        assert_eq!(parser.pos(), res.unwrap().1);
+        assert_eq!(res, Ok(Token::Str((0, 1, 1), "asdf".to_string())));
+        assert_eq!(parser.pos(), (6, 1, 7));
     }
 
     #[test]
@@ -596,16 +569,16 @@ mod tests {
     fn test_parse_number1() {
         let mut parser = HtmlParser::new("123");
         let res = parser.parse_number();
-        assert_eq!(res, Ok((Token::Number((0, 1, 1), 123), (3, 1, 4))));
-        assert_eq!(parser.pos(), res.unwrap().1);
+        assert_eq!(res, Ok(Token::Number((0, 1, 1), 123)));
+        assert_eq!(parser.pos(), (3, 1, 4));
     }
 
     #[test]
     fn test_parse_number2() {
         let mut parser = HtmlParser::new("1b3");
         let res = parser.parse_number();
-        assert_eq!(res, Ok((Token::Number((0, 1, 1), 1), (1, 1, 2))));
-        assert_eq!(parser.pos(), res.unwrap().1);
+        assert_eq!(res, Ok(Token::Number((0, 1, 1), 1)));
+        assert_eq!(parser.pos(), (1, 1, 2));
     }
 
     #[test]
@@ -625,21 +598,18 @@ mod tests {
         let res = parser.parse_tag_attributes();
         assert_eq!(
             res,
-            Ok((
-                vec![
-                    (
-                        Token::Identifier((0, 1, 1), "a".to_string()),
-                        Some(Token::Str((2, 1, 3), "a".to_string())),
-                    ),
-                    (
-                        Token::Identifier((6, 1, 7), "b".to_string()),
-                        Some(Token::Str((8, 1, 9), "b".to_string())),
-                    ),
-                ],
-                (11, 1, 12)
-            ))
+            Ok(vec![
+                (
+                    Token::Identifier((0, 1, 1), "a".to_string()),
+                    Some(Token::Str((2, 1, 3), "a".to_string())),
+                ),
+                (
+                    Token::Identifier((6, 1, 7), "b".to_string()),
+                    Some(Token::Str((8, 1, 9), "b".to_string())),
+                ),
+            ],)
         );
-        assert_eq!(parser.pos(), res.unwrap().1);
+        assert_eq!(parser.pos(), (11, 1, 12));
     }
 
     #[test]
@@ -654,25 +624,22 @@ mod tests {
         let res = parser.parse_tag_attributes();
         assert_eq!(
             res,
-            Ok((
-                vec![
-                    (
-                        Token::Identifier((0, 1, 1), "a".to_string()),
-                        Some(Token::Str((2, 1, 3), "1".to_string())),
-                    ),
-                    (
-                        Token::Identifier((6, 2, 1), "b".to_string()),
-                        Some(Token::Number((8, 2, 3), 1)),
-                    ),
-                    (
-                        Token::Identifier((10, 3, 1), "c".to_string()),
-                        Some(Token::Identifier((12, 3, 3), "a1".to_string())),
-                    ),
-                ],
-                (15, 4, 1)
-            ))
+            Ok(vec![
+                (
+                    Token::Identifier((0, 1, 1), "a".to_string()),
+                    Some(Token::Str((2, 1, 3), "1".to_string())),
+                ),
+                (
+                    Token::Identifier((6, 2, 1), "b".to_string()),
+                    Some(Token::Number((8, 2, 3), 1)),
+                ),
+                (
+                    Token::Identifier((10, 3, 1), "c".to_string()),
+                    Some(Token::Identifier((12, 3, 3), "a1".to_string())),
+                ),
+            ],)
         );
-        assert_eq!(parser.pos(), res.unwrap().1);
+        assert_eq!(parser.pos(), (15, 4, 1));
     }
 
     #[test]
@@ -687,21 +654,18 @@ mod tests {
         let res = parser.parse_tag_attributes();
         assert_eq!(
             res,
-            Ok((
-                vec![
-                    (
-                        Token::Identifier((0, 1, 1), "a".to_string()),
-                        Some(Token::Str((6, 1, 7), "a".to_string())),
-                    ),
-                    (
-                        Token::Identifier((10, 2, 1), "b".to_string()),
-                        Some(Token::Str((13, 3, 1), "b".to_string())),
-                    ),
-                ],
-                (17, 4, 1)
-            ))
+            Ok(vec![
+                (
+                    Token::Identifier((0, 1, 1), "a".to_string()),
+                    Some(Token::Str((6, 1, 7), "a".to_string())),
+                ),
+                (
+                    Token::Identifier((10, 2, 1), "b".to_string()),
+                    Some(Token::Str((13, 3, 1), "b".to_string())),
+                ),
+            ],)
         );
-        assert_eq!(parser.pos(), res.unwrap().1);
+        assert_eq!(parser.pos(), (17, 4, 1));
     }
 
     #[test]
@@ -710,25 +674,22 @@ mod tests {
         let res = parser.parse_tag_attributes();
         assert_eq!(
             res,
-            Ok((
-                vec![
-                    (
-                        Token::Identifier((0, 1, 1), "a".to_string()),
-                        Some(Token::Str((2, 1, 3), "a".to_string())),
-                    ),
-                ],
-                (6, 1, 7)
-            ))
+            Ok(vec![
+                (
+                    Token::Identifier((0, 1, 1), "a".to_string()),
+                    Some(Token::Str((2, 1, 3), "a".to_string())),
+                ),
+            ],)
         );
-        assert_eq!(parser.pos(), res.unwrap().1);
+        assert_eq!(parser.pos(), (6, 1, 7));
     }
 
     #[test]
     fn test_parse_tag_attributes_early_termination2() {
         let mut parser = HtmlParser::new("a='a <");
         let res = parser.parse_tag_attributes();
-        assert_eq!(res, Ok((vec![], (0, 1, 1))));
-        assert_eq!(parser.pos(), res.unwrap().1);
+        assert_eq!(res, Ok(vec![]));
+        assert_eq!(parser.pos(), (0, 1, 1));
     }
 
     #[test]
@@ -737,18 +698,15 @@ mod tests {
         let res = parser.parse_tag_attributes();
         assert_eq!(
             res,
-            Ok((
-                vec![
-                    (
-                        Token::Identifier((0, 1, 1), "a".to_string()),
-                        Some(Token::Identifier((2, 1, 3), "a".to_string())),
-                    ),
-                    (Token::Identifier((4, 1, 5), "b".to_string()), None),
-                ],
-                (5, 1, 6)
-            ))
+            Ok(vec![
+                (
+                    Token::Identifier((0, 1, 1), "a".to_string()),
+                    Some(Token::Identifier((2, 1, 3), "a".to_string())),
+                ),
+                (Token::Identifier((4, 1, 5), "b".to_string()), None),
+            ],)
         );
-        assert_eq!(parser.pos(), res.unwrap().1);
+        assert_eq!(parser.pos(), (5, 1, 6));
     }
 
     #[test]
@@ -757,15 +715,12 @@ mod tests {
         let res = parser.parse_tag_attributes();
         assert_eq!(
             res,
-            Ok((
-                vec![
-                    (Token::Identifier((0, 1, 1), "a".to_string()), None),
-                    (Token::Identifier((2, 1, 3), "b".to_string()), None),
-                ],
-                (3, 1, 4)
-            ))
+            Ok(vec![
+                (Token::Identifier((0, 1, 1), "a".to_string()), None),
+                (Token::Identifier((2, 1, 3), "b".to_string()), None),
+            ],)
         );
-        assert_eq!(parser.pos(), res.unwrap().1);
+        assert_eq!(parser.pos(), (3, 1, 4));
     }
 
     #[test]
@@ -774,12 +729,9 @@ mod tests {
         let res = parser.parse_tag_attributes();
         assert_eq!(
             res,
-            Ok((
-                vec![(Token::Identifier((0, 1, 1), "a".to_string()), None)],
-                (1, 1, 2)
-            ))
+            Ok(vec![(Token::Identifier((0, 1, 1), "a".to_string()), None)],)
         );
-        assert_eq!(parser.pos(), res.unwrap().1);
+        assert_eq!(parser.pos(), (1, 1, 2));
     }
 
     #[test]
@@ -788,11 +740,8 @@ mod tests {
         let parser_fns: Vec<fn(&mut HtmlParser) -> ParserResult<Token>> =
             vec![HtmlParser::parse_identifier, HtmlParser::parse_number];
         let res = parser.try_parse(&parser_fns[..], "");
-        assert_eq!(
-            res,
-            Ok((Token::Identifier((0, 1, 1), "abc".to_string()), (3, 1, 4)))
-        );
-        assert_eq!(parser.pos(), res.unwrap().1);
+        assert_eq!(res, Ok(Token::Identifier((0, 1, 1), "abc".to_string())));
+        assert_eq!(parser.pos(), (3, 1, 4));
     }
 
     #[test]
@@ -801,8 +750,8 @@ mod tests {
         let parser_fns: Vec<fn(&mut HtmlParser) -> ParserResult<Token>> =
             vec![HtmlParser::parse_identifier, HtmlParser::parse_number];
         let res = parser.try_parse(&parser_fns[..], "");
-        assert_eq!(res, Ok((Token::Number((0, 1, 1), 123), (3, 1, 4))));
-        assert_eq!(parser.pos(), res.unwrap().1);
+        assert_eq!(res, Ok(Token::Number((0, 1, 1), 123)));
+        assert_eq!(parser.pos(), (3, 1, 4));
     }
 
     #[test]
@@ -824,12 +773,9 @@ mod tests {
         let res = parser.parse_opening_tag();
         assert_eq!(
             res,
-            Ok((
-                DomNode::new(NodeType::Html, vec![], (0, 1, 1), vec![]),
-                (6, 1, 7)
-            ))
+            Ok(DomNode::new(NodeType::Html, vec![], (0, 1, 1), vec![]),)
         );
-        assert_eq!(parser.pos(), res.unwrap().1);
+        assert_eq!(parser.pos(), (6, 1, 7));
     }
 
     #[test]
@@ -838,22 +784,19 @@ mod tests {
         let res = parser.parse_opening_tag();
         assert_eq!(
             res,
-            Ok((
-                DomNode::new(
-                    NodeType::Html,
-                    vec![
-                        (
-                            Token::Identifier((6, 1, 7), "a".to_string()),
-                            Some(Token::Number((8, 1, 9), 1)),
-                        ),
-                    ],
-                    (0, 1, 1),
-                    vec![]
-                ),
-                (10, 1, 11)
-            ))
+            Ok(DomNode::new(
+                NodeType::Html,
+                vec![
+                    (
+                        Token::Identifier((6, 1, 7), "a".to_string()),
+                        Some(Token::Number((8, 1, 9), 1)),
+                    ),
+                ],
+                (0, 1, 1),
+                vec![]
+            ),)
         );
-        assert_eq!(parser.pos(), res.unwrap().1);
+        assert_eq!(parser.pos(), (10, 1, 11));
     }
 
     #[test]
@@ -890,12 +833,9 @@ mod tests {
         let res = parser.parse_node();
         assert_eq!(
             res,
-            Ok((
-                DomNode::new(NodeType::Html, vec![], (0, 1, 1), vec![]),
-                (13, 1, 14)
-            ))
+            Ok(DomNode::new(NodeType::Html, vec![], (0, 1, 1), vec![]),)
         );
-        assert_eq!(parser.pos(), res.unwrap().1);
+        assert_eq!(parser.pos(), (13, 1, 14));
     }
 
     #[test]
@@ -918,17 +858,14 @@ mod tests {
         let res = parser.parse_node();
         assert_eq!(
             res,
-            Ok((
-                DomNode::new(
-                    NodeType::Html,
-                    vec![],
-                    (0, 1, 1),
-                    vec![DomNode::new(NodeType::Text, vec![], (6, 1, 7), vec![])]
-                ),
-                (18, 1, 19)
-            ))
+            Ok(DomNode::new(
+                NodeType::Html,
+                vec![],
+                (0, 1, 1),
+                vec![DomNode::new(NodeType::Text, vec![], (6, 1, 7), vec![])]
+            ),)
         );
-        assert_eq!(parser.pos(), res.unwrap().1);
+        assert_eq!(parser.pos(), (18, 1, 19));
     }
 
     #[test]
@@ -937,17 +874,14 @@ mod tests {
         let res = parser.parse_node();
         assert_eq!(
             res,
-            Ok((
-                DomNode::new(
-                    NodeType::Html,
-                    vec![],
-                    (0, 1, 1),
-                    vec![DomNode::new(NodeType::Text, vec![], (7, 1, 8), vec![])]
-                ),
-                (23, 1, 24)
-            ))
+            Ok(DomNode::new(
+                NodeType::Html,
+                vec![],
+                (0, 1, 1),
+                vec![DomNode::new(NodeType::Text, vec![], (7, 1, 8), vec![])]
+            ),)
         );
-        assert_eq!(parser.pos(), res.unwrap().1);
+        assert_eq!(parser.pos(), (23, 1, 24));
     }
 
     #[test]
@@ -956,20 +890,17 @@ mod tests {
         let res = parser.parse_node();
         assert_eq!(
             res,
-            Ok((
-                DomNode::new(
-                    NodeType::Html,
-                    vec![],
-                    (0, 1, 1),
-                    vec![
-                        DomNode::new(NodeType::Text, vec![], (7, 1, 8), vec![]),
-                        DomNode::new(NodeType::Body, vec![], (19, 1, 20), vec![]),
-                    ]
-                ),
-                (41, 1, 42)
-            ))
+            Ok(DomNode::new(
+                NodeType::Html,
+                vec![],
+                (0, 1, 1),
+                vec![
+                    DomNode::new(NodeType::Text, vec![], (7, 1, 8), vec![]),
+                    DomNode::new(NodeType::Body, vec![], (19, 1, 20), vec![]),
+                ]
+            ),)
         );
-        assert_eq!(parser.pos(), res.unwrap().1);
+        assert_eq!(parser.pos(), (41, 1, 42));
     }
 
     #[test]
@@ -978,33 +909,30 @@ mod tests {
         let res = parser.parse_node();
         assert_eq!(
             res,
-            Ok((
-                DomNode::new(
-                    NodeType::Html,
-                    vec![],
-                    (0, 1, 1),
-                    vec![
-                        DomNode::new(
-                            NodeType::Body,
-                            vec![
-                                (
-                                    Token::Identifier((14, 1, 15), "a".to_string()),
-                                    Some(Token::Str((16, 1, 17), "b".to_string())),
-                                ),
-                                (
-                                    Token::Identifier((21, 1, 22), "c".to_string()),
-                                    Some(Token::Str((23, 1, 24), "d".to_string())),
-                                ),
-                            ],
-                            (8, 1, 9),
-                            vec![],
-                        ),
-                    ]
-                ),
-                (43, 1, 44)
-            ))
+            Ok(DomNode::new(
+                NodeType::Html,
+                vec![],
+                (0, 1, 1),
+                vec![
+                    DomNode::new(
+                        NodeType::Body,
+                        vec![
+                            (
+                                Token::Identifier((14, 1, 15), "a".to_string()),
+                                Some(Token::Str((16, 1, 17), "b".to_string())),
+                            ),
+                            (
+                                Token::Identifier((21, 1, 22), "c".to_string()),
+                                Some(Token::Str((23, 1, 24), "d".to_string())),
+                            ),
+                        ],
+                        (8, 1, 9),
+                        vec![],
+                    ),
+                ]
+            ),)
         );
-        assert_eq!(parser.pos(), res.unwrap().1);
+        assert_eq!(parser.pos(), (43, 1, 44));
     }
 
     #[test]
@@ -1039,13 +967,31 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_fail_mismatched_closing_tag() {
+    fn test_parse_fail_mismatched_closing_tag1() {
         let mut parser = HtmlParser::new("<html></body>");
         let res = parser.parse_node();
         assert_eq!(
             res,
             Err(Error::Unexpected(
                 (6, 1, 7),
+                format!(
+                    "expected closing tag for {:?}, got {:?}",
+                    NodeType::Html,
+                    NodeType::Body
+                )
+            ))
+        );
+        assert_eq!(parser.pos(), (0, 1, 1));
+    }
+
+    #[test]
+    fn test_parse_fail_mismatched_closing_tag2() {
+        let mut parser = HtmlParser::new("<html><body></body><body></body></body>");
+        let res = parser.parse_node();
+        assert_eq!(
+            res,
+            Err(Error::Unexpected(
+                (32, 1, 33),
                 format!(
                     "expected closing tag for {:?}, got {:?}",
                     NodeType::Html,
