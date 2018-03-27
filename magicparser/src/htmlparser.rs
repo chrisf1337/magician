@@ -349,12 +349,7 @@ impl HtmlParser {
                     "expected identifier".to_string(),
                 ));
             },
-            Err(_) => {
-                return Err(Error::Unexpected(
-                    start_pos,
-                    "expected identifier".to_string(),
-                ))
-            }
+            Err(err) => return Err(err),
         }
         loop {
             match self.peek_char() {
@@ -382,30 +377,33 @@ impl HtmlParser {
     fn parse_string(&mut self) -> ParserResult<Token> {
         let start_pos = self.pos();
         let _ = self.consume_whitespace()?;
-        if self.index >= self.input.len() {
-            return Err(Error::Eof(self.pos()));
-        }
-        if self.input[self.index] != '\'' && self.input[self.index] != '"' {
-            return Err(Error::Unexpected(self.pos(), "expected quote".to_string()));
-        }
-        let quote = self.input[self.index];
+
         let mut st: Vec<char> = vec![];
-        self.index += 1;
-        self.col += 1;
-        while self.index < self.input.len() && self.input[self.index] != quote {
-            if self.input[self.index] == '\n' {
-                // Also include \r?
-                let cur_pos = self.pos();
-                self.set_pos(start_pos);
-                return Err(Error::Unexpected(
-                    cur_pos,
-                    "unexpected newline in string".to_string(),
-                ));
+        let quote = match self.peek_char() {
+            Ok((pos, ch)) => if ch != '\'' && ch != '"' {
+                return Err(Error::Unexpected(pos, "expected quote".to_string()));
+            } else {
+                self.consume_char()?
+            },
+            Err(err) => return Err(err),
+        };
+        loop {
+            match self.peek_char() {
+                Ok((pos, ch)) => if ch == '\n' {
+                    self.set_pos(start_pos);
+                    return Err(Error::Unexpected(
+                        pos,
+                        "unexpected newline in string".to_string(),
+                    ));
+                } else if ch == quote {
+                    break;
+                } else {
+                    st.push(self.consume_char()?);
+                },
+                Err(_) => break,
             }
-            st.push(self.input[self.index]);
-            self.index += 1;
-            self.col += 1;
         }
+
         if self.index == self.input.len() {
             let cur_pos = self.pos();
             self.set_pos(start_pos);
@@ -415,8 +413,7 @@ impl HtmlParser {
             ))
         } else {
             // end of string
-            self.index += 1;
-            self.col += 1;
+            self.consume_char()?;
             Ok(Token::Str(start_pos, st.into_iter().collect()))
         }
     }
@@ -944,6 +941,28 @@ mod tests {
             res,
             Err(Error::Unexpected(
                 (6, 1, 7),
+                "unexpected EOF when parsing string".to_string()
+            ))
+        );
+        assert_eq!(parser.pos(), (0, 1, 1));
+    }
+
+    #[test]
+    fn test_parse_string_with_comment() {
+        let mut parser = HtmlParser::new("'a<!-- \n --> df' a");
+        let res = parser.parse_string();
+        assert_eq!(res, Ok(Token::Str((0, 1, 1), "a df".to_string())));
+        assert_eq!(parser.pos(), (16, 2, 9));
+    }
+
+    #[test]
+    fn test_parse_string_unclosed_with_comment() {
+        let mut parser = HtmlParser::new("'a<!-- \n --> df a");
+        let res = parser.parse_string();
+        assert_eq!(
+            res,
+            Err(Error::Unexpected(
+                (17, 2, 10),
                 "unexpected EOF when parsing string".to_string()
             ))
         );
