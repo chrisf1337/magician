@@ -16,6 +16,8 @@ pub enum NodeType {
     Head,
     Body,
     Img,
+    H1,
+    P,
 }
 
 impl NodeType {
@@ -25,6 +27,8 @@ impl NodeType {
             "head" => Some(NodeType::Head),
             "body" => Some(NodeType::Body),
             "img" => Some(NodeType::Img),
+            "h1" => Some(NodeType::H1),
+            "p" => Some(NodeType::P),
             _ => None,
         }
     }
@@ -39,23 +43,23 @@ impl NodeType {
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct DomNode {
+    pub pos: Pos,
     pub node_type: NodeType,
     pub attrs: Vec<(Token, Option<Token>)>,
-    pub pos: Pos,
     pub children: Vec<DomNode>,
 }
 
 impl DomNode {
     fn new(
+        pos: Pos,
         node_type: NodeType,
         attrs: Vec<(Token, Option<Token>)>,
-        pos: Pos,
         children: Vec<DomNode>,
     ) -> DomNode {
         DomNode {
+            pos,
             node_type,
             attrs,
-            pos,
             children,
         }
     }
@@ -462,18 +466,9 @@ impl HtmlParser {
             return Err(Error::Unexpected(self.pos(), err_msg.to_string()));
         }
         let parser = parsers[0];
-        println!("{:?}", self.pos());
         match self.try(parser) {
-            ok @ Ok(_) => {
-                println!("{:?}", ok);
-                println!("{:?}", self.pos());
-                ok
-            }
-            Err(err) => {
-                println!("{:?}", err);
-                println!("{:?}", self.pos());
-                self.try_parse(&parsers[1..], err_msg)
-            }
+            ok @ Ok(_) => ok,
+            Err(_) => self.try_parse(&parsers[1..], err_msg),
         }
     }
 
@@ -515,6 +510,13 @@ impl HtmlParser {
         }
     }
 
+    fn parse_doctype(&mut self) -> ParserResult<()> {
+        match self.parse_chars("<!DOCTYPE html>") {
+            Ok(_) => Ok(()),
+            Err(err) => Err(err),
+        }
+    }
+
     fn parse_opening_tag(&mut self) -> ParserResult<DomNode> {
         let tag_start_pos = self.parse_one_char('<')?;
         let tag_id = match self.parse_identifier_strict() {
@@ -549,7 +551,7 @@ impl HtmlParser {
                     }
                 },
             };
-            Ok(DomNode::new(node_type, attrs, tag_start_pos, vec![]))
+            Ok(DomNode::new(tag_start_pos, node_type, attrs, vec![]))
         } else {
             let attrs = self.parse_tag_attributes()?;
             match self.parse_one_char('>') {
@@ -561,7 +563,7 @@ impl HtmlParser {
                     ));
                 }
             };
-            Ok(DomNode::new(node_type, attrs, tag_start_pos, vec![]))
+            Ok(DomNode::new(tag_start_pos, node_type, attrs, vec![]))
         }
     }
 
@@ -608,11 +610,11 @@ impl HtmlParser {
                 Err(_) => break,
             }
         }
-        if text.is_empty() {
+        let s: String = text.into_iter().collect::<String>().trim().to_string();
+        if s.len() == 0 {
             Err(Error::Unexpected(self.pos(), "empty text node".to_string()))
         } else {
-            let s: String = text.into_iter().collect::<String>().trim().to_string();
-            Ok(DomNode::new(NodeType::Text(s), vec![], start_pos, vec![]))
+            Ok(DomNode::new(start_pos, NodeType::Text(s), vec![], vec![]))
         }
     }
 
@@ -648,7 +650,6 @@ impl HtmlParser {
             }
             match self.peek_chars(2) {
                 Ok((_, chars)) => {
-                    println!("{}", chars);
                     if chars == "</" {
                         match self.parse_closing_tag(node.clone()) {
                             ok @ Ok(_) => return ok,
@@ -691,6 +692,7 @@ impl HtmlParser {
 
     pub fn parse(input: &str) -> Result<DomNode, Error> {
         let mut parser = HtmlParser::new(input);
+        let _ = parser.try(HtmlParser::parse_doctype);
         let node = parser.parse_node()?;
         Ok(node)
     }
@@ -1042,8 +1044,7 @@ mod tests {
 
     #[test]
     fn test_parse_tag_attributes_multiple_value_types() {
-        let test_dir =
-            Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap()).join("src/htmlparser_tests");
+        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap()).join("htmlparser_tests");
         let mut f = File::open(test_dir.join("parse_tag_attributes_multiple_value_types.html"))
             .expect("file not found");
         let mut input = String::new();
@@ -1072,8 +1073,7 @@ mod tests {
 
     #[test]
     fn test_parse_tag_attributes_whitespace() {
-        let test_dir =
-            Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap()).join("src/htmlparser_tests");
+        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap()).join("htmlparser_tests");
         let mut f = File::open(test_dir.join("parse_tag_attributes_whitespace.html"))
             .expect("file not found");
         let mut input = String::new();
@@ -1212,7 +1212,7 @@ mod tests {
         let res = parser.parse_opening_tag();
         assert_eq!(
             res,
-            Ok(DomNode::new(NodeType::Html, vec![], (0, 1, 1), vec![]),)
+            Ok(DomNode::new((0, 1, 1), NodeType::Html, vec![], vec![]),)
         );
         assert_eq!(parser.pos(), (6, 1, 7));
     }
@@ -1224,6 +1224,7 @@ mod tests {
         assert_eq!(
             res,
             Ok(DomNode::new(
+                (0, 1, 1),
                 NodeType::Html,
                 vec![
                     (
@@ -1231,7 +1232,6 @@ mod tests {
                         Some(Token::Number((8, 1, 9), 1)),
                     ),
                 ],
-                (0, 1, 1),
                 vec![]
             ),)
         );
@@ -1272,7 +1272,7 @@ mod tests {
         let res = parser.parse_node();
         assert_eq!(
             res,
-            Ok(DomNode::new(NodeType::Html, vec![], (0, 1, 1), vec![]),)
+            Ok(DomNode::new((0, 1, 1), NodeType::Html, vec![], vec![]),)
         );
         assert_eq!(parser.pos(), (13, 1, 14));
     }
@@ -1302,7 +1302,7 @@ mod tests {
                 (0, 1, 1),
                 format!(
                     "unclosed element: {:?}",
-                    DomNode::new(NodeType::Html, vec![], (0, 1, 1), vec![])
+                    DomNode::new((0, 1, 1), NodeType::Html, vec![], vec![])
                 ).to_string()
             ))
         );
@@ -1319,7 +1319,7 @@ mod tests {
                 (0, 1, 1),
                 format!(
                     "unclosed element: {:?}",
-                    DomNode::new(NodeType::Html, vec![], (0, 1, 1), vec![])
+                    DomNode::new((0, 1, 1), NodeType::Html, vec![], vec![])
                 ).to_string()
             ))
         );
@@ -1335,14 +1335,14 @@ mod tests {
         assert_eq!(
             res,
             Ok(DomNode::new(
+                (0, 1, 1),
                 NodeType::Html,
                 vec![],
-                (0, 1, 1),
                 vec![
                     DomNode::new(
+                        (6, 1, 7),
                         NodeType::Text("hello".to_string()),
                         vec![],
-                        (6, 1, 7),
                         vec![],
                     ),
                 ]
@@ -1358,14 +1358,14 @@ mod tests {
         assert_eq!(
             res,
             Ok(DomNode::new(
+                (0, 1, 1),
                 NodeType::Html,
                 vec![],
-                (0, 1, 1),
                 vec![
                     DomNode::new(
+                        (7, 1, 8),
                         NodeType::Text("hello".to_string()),
                         vec![],
-                        (7, 1, 8),
                         vec![],
                     ),
                 ]
@@ -1381,17 +1381,17 @@ mod tests {
         assert_eq!(
             res,
             Ok(DomNode::new(
+                (0, 1, 1),
                 NodeType::Html,
                 vec![],
-                (0, 1, 1),
                 vec![
                     DomNode::new(
+                        (7, 1, 8),
                         NodeType::Text("hello hello".to_string()),
                         vec![],
-                        (7, 1, 8),
                         vec![],
                     ),
-                    DomNode::new(NodeType::Body, vec![], (19, 1, 20), vec![]),
+                    DomNode::new((19, 1, 20), NodeType::Body, vec![], vec![]),
                 ]
             ),)
         );
@@ -1405,11 +1405,12 @@ mod tests {
         assert_eq!(
             res,
             Ok(DomNode::new(
+                (0, 1, 1),
                 NodeType::Html,
                 vec![],
-                (0, 1, 1),
                 vec![
                     DomNode::new(
+                        (8, 1, 9),
                         NodeType::Body,
                         vec![
                             (
@@ -1421,7 +1422,6 @@ mod tests {
                                 Some(Token::Str((23, 1, 24), "d".to_string())),
                             ),
                         ],
-                        (8, 1, 9),
                         vec![],
                     ),
                 ]
@@ -1454,7 +1454,7 @@ mod tests {
                 (0, 1, 1),
                 format!(
                     "unclosed element: {:?}",
-                    DomNode::new(NodeType::Html, vec![], (0, 1, 1), vec![])
+                    DomNode::new((0, 1, 1), NodeType::Html, vec![], vec![])
                 )
             ))
         );
@@ -1505,7 +1505,7 @@ mod tests {
         let res = parser.parse_node();
         assert_eq!(
             res,
-            Ok(DomNode::new(NodeType::Html, vec![], (0, 1, 1), vec![]))
+            Ok(DomNode::new((0, 1, 1), NodeType::Html, vec![], vec![]))
         );
         assert_eq!(parser.pos(), (21, 1, 22));
     }
@@ -1517,6 +1517,7 @@ mod tests {
         assert_eq!(
             res,
             Ok(DomNode::new(
+                (0, 1, 1),
                 NodeType::Img,
                 vec![
                     (
@@ -1524,7 +1525,6 @@ mod tests {
                         Some(Token::Str((9, 1, 10), "abc".to_string())),
                     ),
                 ],
-                (0, 1, 1),
                 vec![]
             ))
         );
@@ -1538,6 +1538,7 @@ mod tests {
         assert_eq!(
             res,
             Ok(DomNode::new(
+                (0, 1, 1),
                 NodeType::Img,
                 vec![
                     (
@@ -1545,7 +1546,6 @@ mod tests {
                         Some(Token::Str((9, 1, 10), "abc".to_string())),
                     ),
                 ],
-                (0, 1, 1),
                 vec![]
             ))
         );
@@ -1574,6 +1574,7 @@ mod tests {
         assert_eq!(
             res,
             Ok(DomNode::new(
+                (7, 1, 8),
                 NodeType::Img,
                 vec![
                     (
@@ -1581,10 +1582,61 @@ mod tests {
                         Some(Token::Str((32, 1, 33), "abc".to_string())),
                     ),
                 ],
-                (7, 1, 8),
                 vec![]
             ))
         );
         assert_eq!(parser.pos(), (38, 1, 39));
+    }
+
+    #[test]
+    fn test_parse_with_doctype() {
+        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap()).join("htmlparser_tests");
+        let mut f = File::open(test_dir.join("simple.html")).expect("file not found");
+        let mut input = String::new();
+        f.read_to_string(&mut input).expect("read");
+        let res = HtmlParser::parse(&input);
+        assert_eq!(
+            res,
+            Ok(DomNode::new(
+                (16, 2, 1),
+                NodeType::Html,
+                vec![],
+                vec![
+                    DomNode::new(
+                        (23, 3, 1),
+                        NodeType::Body,
+                        vec![],
+                        vec![
+                            DomNode::new(
+                                (31, 5, 1),
+                                NodeType::H1,
+                                vec![],
+                                vec![
+                                    DomNode::new(
+                                        (35, 5, 5),
+                                        NodeType::Text("My First Heading".to_string()),
+                                        vec![],
+                                        vec![],
+                                    ),
+                                ],
+                            ),
+                            DomNode::new(
+                                (58, 7, 1),
+                                NodeType::P,
+                                vec![],
+                                vec![
+                                    DomNode::new(
+                                        (61, 7, 4),
+                                        NodeType::Text("My first paragraph.".to_string()),
+                                        vec![],
+                                        vec![],
+                                    ),
+                                ],
+                            ),
+                        ],
+                    ),
+                ]
+            ))
+        );
     }
 }
