@@ -12,7 +12,7 @@ pub enum Token {
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum NodeType {
     Html,
-    Text,
+    Text(String),
     Head,
     Body,
     Img,
@@ -29,7 +29,7 @@ impl NodeType {
         }
     }
 
-    fn self_closing(&self) -> bool {
+    fn is_void_elem(&self) -> bool {
         match self {
             &NodeType::Img => true,
             _ => false,
@@ -535,7 +535,7 @@ impl HtmlParser {
             },
             _ => unreachable!(),
         };
-        if node_type.self_closing() {
+        if node_type.is_void_elem() {
             let attrs = self.parse_tag_attributes()?;
             match self.try_parse_chars("/>") {
                 Ok(_) => (),
@@ -611,7 +611,8 @@ impl HtmlParser {
         if text.is_empty() {
             Err(Error::Unexpected(self.pos(), "empty text node".to_string()))
         } else {
-            Ok(DomNode::new(NodeType::Text, vec![], start_pos, vec![]))
+            let s: String = text.into_iter().collect::<String>().trim().to_string();
+            Ok(DomNode::new(NodeType::Text(s), vec![], start_pos, vec![]))
         }
     }
 
@@ -625,7 +626,7 @@ impl HtmlParser {
                 }
             },
         };
-        if node.node_type.self_closing() {
+        if node.node_type.is_void_elem() {
             return Ok(node);
         }
         loop {
@@ -1337,7 +1338,14 @@ mod tests {
                 NodeType::Html,
                 vec![],
                 (0, 1, 1),
-                vec![DomNode::new(NodeType::Text, vec![], (6, 1, 7), vec![])]
+                vec![
+                    DomNode::new(
+                        NodeType::Text("hello".to_string()),
+                        vec![],
+                        (6, 1, 7),
+                        vec![],
+                    ),
+                ]
             ),)
         );
         assert_eq!(parser.pos(), (18, 1, 19));
@@ -1353,7 +1361,14 @@ mod tests {
                 NodeType::Html,
                 vec![],
                 (0, 1, 1),
-                vec![DomNode::new(NodeType::Text, vec![], (7, 1, 8), vec![])]
+                vec![
+                    DomNode::new(
+                        NodeType::Text("hello".to_string()),
+                        vec![],
+                        (7, 1, 8),
+                        vec![],
+                    ),
+                ]
             ),)
         );
         assert_eq!(parser.pos(), (23, 1, 24));
@@ -1370,7 +1385,12 @@ mod tests {
                 vec![],
                 (0, 1, 1),
                 vec![
-                    DomNode::new(NodeType::Text, vec![], (7, 1, 8), vec![]),
+                    DomNode::new(
+                        NodeType::Text("hello hello".to_string()),
+                        vec![],
+                        (7, 1, 8),
+                        vec![],
+                    ),
                     DomNode::new(NodeType::Body, vec![], (19, 1, 20), vec![]),
                 ]
             ),)
@@ -1491,7 +1511,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_opening_tag_self_closing1() {
+    fn test_parse_opening_tag_is_void_elem1() {
         let mut parser = HtmlParser::new("<img src=\"abc\">");
         let res = parser.parse_opening_tag();
         assert_eq!(
@@ -1512,7 +1532,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_opening_tag_self_closing2() {
+    fn test_parse_opening_tag_is_void_elem2() {
         let mut parser = HtmlParser::new("<img src=\"abc\" />");
         let res = parser.parse_opening_tag();
         assert_eq!(
@@ -1533,7 +1553,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_opening_tag_self_closing_fail1() {
+    fn test_parse_opening_tag_is_void_elem_fail1() {
         let mut parser = HtmlParser::new("<img src=\"abc\" / >");
         let res = parser.parse_opening_tag();
         assert_eq!(
@@ -1548,7 +1568,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_opening_tag_self_closing_with_comments() {
+    fn test_parse_opening_tag_is_void_elem_with_comments() {
         let mut parser = HtmlParser::new("<!----><i<!-- -->mg src<!-- -->=\"abc\">");
         let res = parser.parse_opening_tag();
         assert_eq!(
