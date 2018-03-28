@@ -18,6 +18,25 @@ pub enum NodeType {
     Img,
 }
 
+impl NodeType {
+    fn from_tag_id(tag_id_str: &str) -> Option<NodeType> {
+        match tag_id_str.to_ascii_lowercase().as_ref() {
+            "html" => Some(NodeType::Html),
+            "head" => Some(NodeType::Head),
+            "body" => Some(NodeType::Body),
+            "img" => Some(NodeType::Img),
+            _ => None,
+        }
+    }
+
+    fn self_closing(&self) -> bool {
+        match self {
+            &NodeType::Img => true,
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct DomNode {
     pub node_type: NodeType,
@@ -404,6 +423,29 @@ impl HtmlParser {
         }
     }
 
+    fn parse_chars(&mut self, chars: &str) -> ParserResult<Pos> {
+        if chars.is_empty() {
+            panic!("Cannot call parse_chars() with empty string");
+        }
+        let chars: Vec<char> = chars.chars().collect();
+        let pos = self.parse_one_char(chars[0])?;
+        for &c in chars.iter().skip(1) {
+            self.parse_one_char_strict(c)?;
+        }
+        Ok(pos)
+    }
+
+    fn try_parse_chars(&mut self, chars: &str) -> ParserResult<Pos> {
+        let start_pos = self.pos();
+        match self.parse_chars(chars) {
+            ok @ Ok(_) => ok,
+            Err(err) => {
+                self.set_pos(start_pos);
+                Err(err)
+            }
+        }
+    }
+
     fn try<T>(&mut self, parser: ParserFn<T>) -> ParserResult<T> {
         let start_pos = self.pos();
         match parser(self) {
@@ -482,8 +524,7 @@ impl HtmlParser {
             }
         };
         let node_type = match tag_id {
-            Token::Identifier(tag_id_pos, tag_id_str) => match tag_id_str_to_node_type(&tag_id_str)
-            {
+            Token::Identifier(tag_id_pos, tag_id_str) => match NodeType::from_tag_id(&tag_id_str) {
                 Some(node_type) => node_type,
                 None => {
                     return Err(Error::Unexpected(
@@ -494,21 +535,34 @@ impl HtmlParser {
             },
             _ => unreachable!(),
         };
-        // let self_closing = match node_type {
-        //     NodeType::Img => true,
-        //     _ => false,
-        // };
-        let attrs = self.parse_tag_attributes()?;
-        match self.parse_one_char('>') {
-            Ok(_) => (),
-            Err(_) => {
-                return Err(Error::Unexpected(
-                    tag_start_pos,
-                    format!("unclosed tag: {:?}", node_type),
-                ));
-            }
-        };
-        Ok(DomNode::new(node_type, attrs, tag_start_pos, vec![]))
+        if node_type.self_closing() {
+            let attrs = self.parse_tag_attributes()?;
+            match self.try_parse_chars("/>") {
+                Ok(_) => (),
+                Err(_) => match self.try_parse_chars(">") {
+                    Ok(_) => (),
+                    Err(_) => {
+                        return Err(Error::Unexpected(
+                            tag_start_pos,
+                            format!("unclosed tag: {:?}", node_type),
+                        ))
+                    }
+                },
+            };
+            Ok(DomNode::new(node_type, attrs, tag_start_pos, vec![]))
+        } else {
+            let attrs = self.parse_tag_attributes()?;
+            match self.parse_one_char('>') {
+                Ok(_) => (),
+                Err(_) => {
+                    return Err(Error::Unexpected(
+                        tag_start_pos,
+                        format!("unclosed tag: {:?}", node_type),
+                    ));
+                }
+            };
+            Ok(DomNode::new(node_type, attrs, tag_start_pos, vec![]))
+        }
     }
 
     fn parse_closing_tag(&mut self, opening_tag: DomNode) -> ParserResult<DomNode> {
@@ -516,8 +570,7 @@ impl HtmlParser {
         let _ = self.parse_one_char_strict('/')?;
         let tag_id = self.parse_identifier_strict()?;
         let node_type = match tag_id {
-            Token::Identifier(tag_id_pos, tag_id_str) => match tag_id_str_to_node_type(&tag_id_str)
-            {
+            Token::Identifier(tag_id_pos, tag_id_str) => match NodeType::from_tag_id(&tag_id_str) {
                 Some(node_type) => node_type,
                 None => {
                     return Err(Error::Unexpected(
@@ -568,12 +621,13 @@ impl HtmlParser {
             Err(_) => match self.try(HtmlParser::parse_opening_tag) {
                 Ok(node) => node,
                 Err(err) => {
-                    println!("here");
                     return Err(err);
                 }
             },
         };
-        println!("{:?}", node);
+        if node.node_type.self_closing() {
+            return Ok(node);
+        }
         loop {
             match self.consume_whitespace() {
                 Ok(_) => (),
@@ -638,15 +692,6 @@ impl HtmlParser {
         let mut parser = HtmlParser::new(input);
         let node = parser.parse_node()?;
         Ok(node)
-    }
-}
-
-fn tag_id_str_to_node_type(tag_id_str: &str) -> Option<NodeType> {
-    match tag_id_str.to_ascii_lowercase().as_ref() {
-        "html" => Some(NodeType::Html),
-        "head" => Some(NodeType::Head),
-        "body" => Some(NodeType::Body),
-        _ => None,
     }
 }
 
@@ -793,6 +838,30 @@ mod tests {
         let res = parser.consume_whitespace();
         assert_eq!(res, Ok(()));
         assert_eq!(parser.pos(), (9, 2, 5));
+    }
+
+    #[test]
+    fn test_parse_chars1() {
+        let mut parser = HtmlParser::new("  abc");
+        let res = parser.parse_chars("ab");
+        assert_eq!(res, Ok((2, 1, 3)));
+        assert_eq!(parser.pos(), (4, 1, 5));
+    }
+
+    #[test]
+    fn test_parse_chars2() {
+        let mut parser = HtmlParser::new("  a");
+        let res = parser.parse_chars("ab");
+        assert_eq!(res, Err(Error::Eof((3, 1, 4))));
+        assert_eq!(parser.pos(), (3, 1, 4));
+    }
+
+    #[test]
+    fn test_parse_chars_with_comments() {
+        let mut parser = HtmlParser::new(" <!-- --> a<!-- -->bc");
+        let res = parser.parse_chars("ab");
+        assert_eq!(res, Ok((10, 1, 11)));
+        assert_eq!(parser.pos(), (20, 1, 21));
     }
 
     #[test]
@@ -1419,5 +1488,83 @@ mod tests {
             Ok(DomNode::new(NodeType::Html, vec![], (0, 1, 1), vec![]))
         );
         assert_eq!(parser.pos(), (21, 1, 22));
+    }
+
+    #[test]
+    fn test_parse_opening_tag_self_closing1() {
+        let mut parser = HtmlParser::new("<img src=\"abc\">");
+        let res = parser.parse_opening_tag();
+        assert_eq!(
+            res,
+            Ok(DomNode::new(
+                NodeType::Img,
+                vec![
+                    (
+                        Token::Identifier((5, 1, 6), "src".to_string()),
+                        Some(Token::Str((9, 1, 10), "abc".to_string())),
+                    ),
+                ],
+                (0, 1, 1),
+                vec![]
+            ))
+        );
+        assert_eq!(parser.pos(), (15, 1, 16));
+    }
+
+    #[test]
+    fn test_parse_opening_tag_self_closing2() {
+        let mut parser = HtmlParser::new("<img src=\"abc\" />");
+        let res = parser.parse_opening_tag();
+        assert_eq!(
+            res,
+            Ok(DomNode::new(
+                NodeType::Img,
+                vec![
+                    (
+                        Token::Identifier((5, 1, 6), "src".to_string()),
+                        Some(Token::Str((9, 1, 10), "abc".to_string())),
+                    ),
+                ],
+                (0, 1, 1),
+                vec![]
+            ))
+        );
+        assert_eq!(parser.pos(), (17, 1, 18));
+    }
+
+    #[test]
+    fn test_parse_opening_tag_self_closing_fail1() {
+        let mut parser = HtmlParser::new("<img src=\"abc\" / >");
+        let res = parser.parse_opening_tag();
+        assert_eq!(
+            res,
+            Err(Error::Unexpected(
+                (0, 1, 1),
+                "unclosed tag: Img".to_string()
+            ))
+        );
+        // parser stops at 15 because parse_tag_attributes() fails on the last /
+        assert_eq!(parser.pos(), (15, 1, 16));
+    }
+
+    #[test]
+    fn test_parse_opening_tag_self_closing_with_comments() {
+        let mut parser = HtmlParser::new("<!----><i<!-- -->mg src<!-- -->=\"abc\">");
+        let res = parser.parse_opening_tag();
+        assert_eq!(
+            res,
+            Ok(DomNode::new(
+                NodeType::Img,
+                vec![
+                    (
+                        Token::Identifier((20, 1, 21), "src".to_string()),
+                        Some(Token::Str((32, 1, 33), "abc".to_string())),
+                    ),
+                ],
+                (7, 1, 8),
+                vec![]
+            ))
+        );
+        assert_eq!(parser.pos(), (38, 1, 39));
     }
 }
