@@ -18,6 +18,7 @@ pub enum NodeType {
     Img,
     H1,
     P,
+    A,
 }
 
 impl NodeType {
@@ -29,6 +30,7 @@ impl NodeType {
             "img" => Some(NodeType::Img),
             "h1" => Some(NodeType::H1),
             "p" => Some(NodeType::P),
+            "a" => Some(NodeType::A),
             _ => None,
         }
     }
@@ -1676,12 +1678,33 @@ mod tests {
                                 ],
                             ),
                             DomNode::new(
-                                (58, 7, 1),
+                                (57, 6, 1),
+                                NodeType::A,
+                                vec![
+                                    (
+                                        Token::Identifier((60, 6, 4), "href".to_string()),
+                                        Some(Token::Value(
+                                            (65, 6, 9),
+                                            "https://www.google.com".to_string(),
+                                        )),
+                                    ),
+                                ],
+                                vec![
+                                    DomNode::new(
+                                        (88, 6, 32),
+                                        NodeType::Text("Link".to_string()),
+                                        vec![],
+                                        vec![],
+                                    ),
+                                ],
+                            ),
+                            DomNode::new(
+                                (97, 7, 1),
                                 NodeType::P,
                                 vec![],
                                 vec![
                                     DomNode::new(
-                                        (61, 7, 4),
+                                        (100, 7, 4),
                                         NodeType::Text("My first paragraph.".to_string()),
                                         vec![],
                                         vec![],
