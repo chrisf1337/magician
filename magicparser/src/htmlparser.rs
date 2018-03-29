@@ -1,6 +1,5 @@
-use std::fmt::Debug;
-
-type Pos = (usize, usize, usize); // index, row, col
+use error::{Error, Pos, Result};
+use std::result;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Token {
@@ -67,12 +66,6 @@ impl DomNode {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
-pub enum Error {
-    Eof(Pos),
-    Unexpected(Pos, String),
-}
-
 pub struct HtmlParser {
     input: Vec<char>,
     index: usize,
@@ -80,8 +73,7 @@ pub struct HtmlParser {
     col: usize,
 }
 
-type ParserResult<T> = Result<T, Error>;
-type ParserFn<T> = fn(&mut HtmlParser) -> ParserResult<T>;
+type ParserFn<T> = fn(&mut HtmlParser) -> Result<T>;
 
 impl HtmlParser {
     fn new(input: &str) -> HtmlParser {
@@ -103,14 +95,14 @@ impl HtmlParser {
         (self.index, self.row, self.col)
     }
 
-    fn get_ch(&self, i: usize) -> ParserResult<char> {
+    fn get_ch(&self, i: usize) -> Result<char> {
         if i >= self.input.len() {
             return Err(Error::Eof(self.pos()));
         }
         return Ok(self.input[i]);
     }
 
-    fn consume_char(&mut self) -> ParserResult<(Pos, char)> {
+    fn consume_char(&mut self) -> Result<(Pos, char)> {
         // This code looks bad...
         // Check for comment
         let mut in_comment = false;
@@ -222,7 +214,7 @@ impl HtmlParser {
         }
     }
 
-    fn peek_chars(&mut self, mut n: i32) -> ParserResult<(Pos, String)> {
+    fn peek_chars(&mut self, mut n: i32) -> Result<(Pos, String)> {
         let start_pos = self.pos();
         let mut chars = String::new();
         let (pos, ch) = match self.consume_char() {
@@ -249,7 +241,7 @@ impl HtmlParser {
         Ok((pos, chars))
     }
 
-    fn peek_char(&mut self) -> ParserResult<(Pos, char)> {
+    fn peek_char(&mut self) -> Result<(Pos, char)> {
         let start_pos = self.pos();
         match self.consume_char() {
             Ok((pos, ch)) => {
@@ -263,7 +255,7 @@ impl HtmlParser {
         }
     }
 
-    fn consume_whitespace(&mut self) -> ParserResult<()> {
+    fn consume_whitespace(&mut self) -> Result<()> {
         let mut found_whitespace = false;
         loop {
             match self.peek_char() {
@@ -295,12 +287,12 @@ impl HtmlParser {
         }
     }
 
-    fn parse_identifier(&mut self) -> ParserResult<Token> {
+    fn parse_identifier(&mut self) -> Result<Token> {
         let _ = self.consume_whitespace()?;
         self.parse_identifier_strict()
     }
 
-    fn parse_identifier_strict(&mut self) -> ParserResult<Token> {
+    fn parse_identifier_strict(&mut self) -> Result<Token> {
         let start_pos = self.pos();
         let mut id: Vec<char> = vec![];
         match self.peek_char() {
@@ -336,7 +328,7 @@ impl HtmlParser {
         }
     }
 
-    fn parse_value(&mut self) -> ParserResult<Token> {
+    fn parse_value(&mut self) -> Result<Token> {
         let _ = self.consume_whitespace()?;
         let start_pos = self.pos();
         let mut id: Vec<char> = vec![];
@@ -370,7 +362,7 @@ impl HtmlParser {
     }
 
     // Returned position is the start of the first quote char. String returned in Token::Str enum does not include quotes.
-    fn parse_string(&mut self) -> ParserResult<Token> {
+    fn parse_string(&mut self) -> Result<Token> {
         let _ = self.consume_whitespace()?;
 
         let mut st: Vec<char> = vec![];
@@ -411,12 +403,12 @@ impl HtmlParser {
     }
 
     // Does not advance parser on failure since it peeks first (maybe it should?)
-    fn try_parse_one_char(&mut self, ch: char) -> ParserResult<Pos> {
+    fn try_parse_one_char(&mut self, ch: char) -> Result<Pos> {
         let _ = self.consume_whitespace()?;
         self.try_parse_one_char_strict(ch)
     }
 
-    fn try_parse_one_char_strict(&mut self, ch: char) -> ParserResult<Pos> {
+    fn try_parse_one_char_strict(&mut self, ch: char) -> Result<Pos> {
         let (pos, c) = self.peek_char()?;
         if c == ch {
             self.consume_char()?;
@@ -429,7 +421,7 @@ impl HtmlParser {
         }
     }
 
-    fn parse_chars(&mut self, chars: &str) -> ParserResult<Pos> {
+    fn parse_chars(&mut self, chars: &str) -> Result<Pos> {
         if chars.is_empty() {
             panic!("Cannot call parse_chars() with empty string");
         }
@@ -441,7 +433,7 @@ impl HtmlParser {
         Ok(pos)
     }
 
-    fn try_parse_chars(&mut self, chars: &str) -> ParserResult<Pos> {
+    fn try_parse_chars(&mut self, chars: &str) -> Result<Pos> {
         let start_pos = self.pos();
         match self.parse_chars(chars) {
             ok @ Ok(_) => ok,
@@ -452,7 +444,7 @@ impl HtmlParser {
         }
     }
 
-    fn try<T>(&mut self, parser: ParserFn<T>) -> ParserResult<T> {
+    fn try<T>(&mut self, parser: ParserFn<T>) -> Result<T> {
         let start_pos = self.pos();
         match parser(self) {
             ok @ Ok(_) => ok,
@@ -463,7 +455,7 @@ impl HtmlParser {
         }
     }
 
-    fn try_parse<T: Debug>(&mut self, parsers: &[ParserFn<T>], err_msg: &str) -> ParserResult<T> {
+    fn try_parse<T>(&mut self, parsers: &[ParserFn<T>], err_msg: &str) -> Result<T> {
         if parsers.is_empty() {
             return Err(Error::Unexpected(self.pos(), err_msg.to_string()));
         }
@@ -474,7 +466,7 @@ impl HtmlParser {
         }
     }
 
-    fn parse_tag_attributes(&mut self) -> ParserResult<Vec<(Token, Option<Token>)>> {
+    fn parse_tag_attributes(&mut self) -> Result<Vec<(Token, Option<Token>)>> {
         // roll back to next_start_pos if we parse an incomplete pair
         let mut next_start_pos = self.pos();
         let mut attributes: Vec<(Token, Option<Token>)> = vec![];
@@ -509,14 +501,14 @@ impl HtmlParser {
         }
     }
 
-    fn parse_doctype(&mut self) -> ParserResult<()> {
+    fn parse_doctype(&mut self) -> Result<()> {
         match self.parse_chars("<!DOCTYPE html>") {
             Ok(_) => Ok(()),
             Err(err) => Err(err),
         }
     }
 
-    fn parse_opening_tag(&mut self) -> ParserResult<DomNode> {
+    fn parse_opening_tag(&mut self) -> Result<DomNode> {
         let tag_start_pos = self.try_parse_one_char('<')?;
         let tag_id = match self.parse_identifier_strict() {
             Ok(tag_id) => tag_id,
@@ -566,7 +558,7 @@ impl HtmlParser {
         }
     }
 
-    fn parse_closing_tag(&mut self, opening_tag: DomNode) -> ParserResult<DomNode> {
+    fn parse_closing_tag(&mut self, opening_tag: DomNode) -> Result<DomNode> {
         let tag_start_pos = self.try_parse_one_char('<')?;
         let _ = self.try_parse_one_char_strict('/')?;
         let tag_id = self.parse_identifier_strict()?;
@@ -595,7 +587,7 @@ impl HtmlParser {
         Ok(opening_tag)
     }
 
-    fn parse_text_node(&mut self) -> ParserResult<DomNode> {
+    fn parse_text_node(&mut self) -> Result<DomNode> {
         let start_pos = self.pos();
         let mut text: Vec<char> = vec![];
         loop {
@@ -617,7 +609,7 @@ impl HtmlParser {
         }
     }
 
-    fn parse_node(&mut self) -> ParserResult<DomNode> {
+    fn parse_node(&mut self) -> Result<DomNode> {
         let mut node = match self.try(HtmlParser::parse_text_node) {
             Ok(node) => node,
             Err(_) => match self.try(HtmlParser::parse_opening_tag) {
@@ -689,7 +681,7 @@ impl HtmlParser {
         }
     }
 
-    pub fn parse(input: &str) -> Result<DomNode, Error> {
+    pub fn parse(input: &str) -> result::Result<DomNode, Error> {
         let mut parser = HtmlParser::new(input);
         let _ = parser.try(HtmlParser::parse_doctype);
         let node = parser.parse_node()?;
@@ -1198,7 +1190,7 @@ mod tests {
     #[test]
     fn test_try_parse1() {
         let mut parser = HtmlParser::new("abc");
-        let parser_fns: Vec<fn(&mut HtmlParser) -> ParserResult<Token>> =
+        let parser_fns: Vec<fn(&mut HtmlParser) -> Result<Token>> =
             vec![HtmlParser::parse_identifier, HtmlParser::parse_value];
         let res = parser.try_parse(&parser_fns[..], "");
         assert_eq!(res, Ok(Token::Identifier((0, 1, 1), "abc".to_string())));
@@ -1208,7 +1200,7 @@ mod tests {
     #[test]
     fn test_try_parse2() {
         let mut parser = HtmlParser::new("123");
-        let parser_fns: Vec<fn(&mut HtmlParser) -> ParserResult<Token>> =
+        let parser_fns: Vec<fn(&mut HtmlParser) -> Result<Token>> =
             vec![HtmlParser::parse_identifier, HtmlParser::parse_value];
         let res = parser.try_parse(&parser_fns[..], "");
         assert_eq!(res, Ok(Token::Value((0, 1, 1), "123".to_string())));
@@ -1218,7 +1210,7 @@ mod tests {
     #[test]
     fn test_try_parse3() {
         let mut parser = HtmlParser::new("<");
-        let parser_fns: Vec<fn(&mut HtmlParser) -> ParserResult<Token>> =
+        let parser_fns: Vec<fn(&mut HtmlParser) -> Result<Token>> =
             vec![HtmlParser::parse_identifier, HtmlParser::parse_value];
         let res = parser.try_parse(&parser_fns[..], "error message");
         assert_eq!(
