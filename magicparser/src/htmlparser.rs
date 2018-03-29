@@ -1,4 +1,5 @@
 use error::{Error, Pos, Result};
+use lexer::Lexer;
 use std::result;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -67,10 +68,7 @@ impl DomNode {
 }
 
 pub struct HtmlParser {
-    input: Vec<char>,
-    index: usize,
-    row: usize,
-    col: usize,
+    lexer: Lexer,
 }
 
 type ParserFn<T> = fn(&mut HtmlParser) -> Result<T>;
@@ -78,227 +76,32 @@ type ParserFn<T> = fn(&mut HtmlParser) -> Result<T>;
 impl HtmlParser {
     fn new(input: &str) -> HtmlParser {
         HtmlParser {
-            input: input.chars().collect(),
-            index: 0,
-            row: 1,
-            col: 1,
+            lexer: Lexer::new(input, "<!--", "-->"),
         }
     }
 
     fn set_pos(&mut self, pos: Pos) {
-        self.index = pos.0;
-        self.row = pos.1;
-        self.col = pos.2;
+        self.lexer.index = pos.0;
+        self.lexer.row = pos.1;
+        self.lexer.col = pos.2;
     }
 
     fn pos(&self) -> Pos {
-        (self.index, self.row, self.col)
-    }
-
-    fn get_ch(&self, i: usize) -> Result<char> {
-        if i >= self.input.len() {
-            return Err(Error::Eof(self.pos()));
-        }
-        return Ok(self.input[i]);
-    }
-
-    fn consume_char(&mut self) -> Result<(Pos, char)> {
-        // This code looks bad...
-        // Check for comment
-        let mut in_comment = false;
-        let start_pos = self.pos();
-        while self.get_ch(self.index)
-            .and_then(|ch| {
-                if ch == '<' {
-                    self.get_ch(self.index + 1)
-                } else {
-                    Err(Error::Eof(self.pos()))
-                }
-            })
-            .and_then(|ch| {
-                if ch == '!' {
-                    self.get_ch(self.index + 2)
-                } else {
-                    // dummy value; I just need an error here
-                    Err(Error::Eof(self.pos()))
-                }
-            })
-            .and_then(|ch| {
-                if ch == '-' {
-                    self.get_ch(self.index + 3)
-                } else {
-                    // dummy value; I just need an error here
-                    Err(Error::Eof(self.pos()))
-                }
-            })
-            .and_then(|ch| {
-                if ch == '-' {
-                    Ok(())
-                } else {
-                    // dummy value; I just need an error here
-                    Err(Error::Eof(self.pos()))
-                }
-            })
-            .is_ok()
-        {
-            // Look for the end of the comment
-            in_comment = true;
-            let mut found_end = false;
-            self.index += 4;
-            self.col += 4;
-            while self.index < self.input.len() {
-                if self.get_ch(self.index)
-                    .and_then(|ch| {
-                        if ch == '-' {
-                            self.get_ch(self.index + 1)
-                        } else {
-                            Err(Error::Eof(self.pos()))
-                        }
-                    })
-                    .and_then(|ch| {
-                        if ch == '-' {
-                            self.get_ch(self.index + 2)
-                        } else {
-                            // dummy value; I just need an error here
-                            Err(Error::Eof(self.pos()))
-                        }
-                    })
-                    .and_then(|ch| {
-                        if ch == '>' {
-                            Ok(())
-                        } else {
-                            // dummy value; I just need an error here
-                            Err(Error::Eof(self.pos()))
-                        }
-                    })
-                    .is_ok()
-                {
-                    found_end = true;
-                    break;
-                } else {
-                    match self.get_ch(self.index) {
-                        Ok('\n') => {
-                            self.row += 1;
-                            self.col = 1;
-                        }
-                        _ => self.col += 1,
-                    }
-                    self.index += 1;
-                }
-            }
-            if found_end {
-                self.index += 3;
-                self.col += 3;
-                in_comment = false;
-            }
-        }
-        if in_comment {
-            // reached EOF without finding comment close; consume as regular text
-            self.set_pos(start_pos);
-        }
-        match self.get_ch(self.index) {
-            Ok('\n') => {
-                let pos = self.pos();
-                self.index += 1;
-                self.row += 1;
-                self.col = 1;
-                Ok((pos, '\n'))
-            }
-            Ok(ch) => {
-                let pos = self.pos();
-                self.index += 1;
-                self.col += 1;
-                Ok((pos, ch))
-            }
-            Err(err) => Err(err),
-        }
-    }
-
-    fn peek_chars(&mut self, mut n: i32) -> Result<(Pos, String)> {
-        let start_pos = self.pos();
-        let mut chars = String::new();
-        let (pos, ch) = match self.consume_char() {
-            Ok(res) => res,
-            Err(err) => {
-                self.set_pos(start_pos);
-                return Err(err);
-            }
-        };
-        chars.push(ch);
-        n -= 1;
-        while n > 0 {
-            let ch = match self.consume_char() {
-                Ok((_, ch)) => ch,
-                Err(err) => {
-                    self.set_pos(start_pos);
-                    return Err(err);
-                }
-            };
-            chars.push(ch);
-            n -= 1;
-        }
-        self.set_pos(start_pos);
-        Ok((pos, chars))
-    }
-
-    fn peek_char(&mut self) -> Result<(Pos, char)> {
-        let start_pos = self.pos();
-        match self.consume_char() {
-            Ok((pos, ch)) => {
-                self.set_pos(start_pos);
-                Ok((pos, ch))
-            }
-            Err(err) => {
-                self.set_pos(start_pos);
-                Err(err)
-            }
-        }
-    }
-
-    fn consume_whitespace(&mut self) -> Result<()> {
-        let mut found_whitespace = false;
-        loop {
-            match self.peek_char() {
-                Ok((pos, ch)) => if ch.is_ascii_whitespace() {
-                    match ch {
-                        ' ' | '\t' | '\n' => {
-                            found_whitespace = true;
-                            self.consume_char()?
-                        }
-                        _ => {
-                            return Err(Error::Unexpected(
-                                pos,
-                                format!("unsupported whitespace char: {}", self.input[self.index])
-                                    .to_string(),
-                            ))
-                        }
-                    }
-                } else {
-                    return Ok(());
-                },
-                Err(err) => {
-                    if !found_whitespace {
-                        return Err(err);
-                    } else {
-                        return Ok(());
-                    }
-                }
-            };
-        }
+        self.lexer.pos()
     }
 
     fn parse_identifier(&mut self) -> Result<Token> {
-        let _ = self.consume_whitespace()?;
+        let _ = self.lexer.consume_whitespace()?;
         self.parse_identifier_strict()
     }
 
     fn parse_identifier_strict(&mut self) -> Result<Token> {
         let start_pos = self.pos();
         let mut id: Vec<char> = vec![];
-        match self.peek_char() {
+        match self.lexer.peek_char() {
             Ok((_, ch)) => if ch.is_ascii_alphabetic() {
                 id.push(ch);
-                self.consume_char()?;
+                self.lexer.consume_char()?;
             } else {
                 return Err(Error::Unexpected(
                     start_pos,
@@ -308,10 +111,10 @@ impl HtmlParser {
             Err(err) => return Err(err),
         }
         loop {
-            match self.peek_char() {
+            match self.lexer.peek_char() {
                 Ok((_, ch)) => if ch.is_ascii_alphanumeric() || ch == '-' {
                     id.push(ch);
-                    self.consume_char()?;
+                    self.lexer.consume_char()?;
                 } else {
                     break;
                 },
@@ -329,25 +132,25 @@ impl HtmlParser {
     }
 
     fn parse_value(&mut self) -> Result<Token> {
-        let _ = self.consume_whitespace()?;
+        let _ = self.lexer.consume_whitespace()?;
         let start_pos = self.pos();
         let mut id: Vec<char> = vec![];
-        match self.peek_char() {
+        match self.lexer.peek_char() {
             Ok((_, ch)) => if ch != '<' && ch != '>' && ch != '"' && ch != '\'' {
                 id.push(ch);
-                self.consume_char()?;
+                self.lexer.consume_char()?;
             } else {
                 return Err(Error::Unexpected(start_pos, "expected value".to_string()));
             },
             Err(err) => return Err(err),
         }
         loop {
-            match self.peek_char() {
+            match self.lexer.peek_char() {
                 Ok((_, ch)) => if !ch.is_ascii_whitespace() && ch != '<' && ch != '>' && ch != '"'
                     && ch != '\''
                 {
                     id.push(ch);
-                    self.consume_char()?;
+                    self.lexer.consume_char()?;
                 } else {
                     break;
                 },
@@ -363,19 +166,19 @@ impl HtmlParser {
 
     // Returned position is the start of the first quote char. String returned in Token::Str enum does not include quotes.
     fn parse_string(&mut self) -> Result<Token> {
-        let _ = self.consume_whitespace()?;
+        let _ = self.lexer.consume_whitespace()?;
 
         let mut st: Vec<char> = vec![];
-        let (str_start_pos, quote) = match self.peek_char() {
+        let (str_start_pos, quote) = match self.lexer.peek_char() {
             Ok((pos, ch)) => if ch != '\'' && ch != '"' {
                 return Err(Error::Unexpected(pos, "expected quote".to_string()));
             } else {
-                self.consume_char()?
+                self.lexer.consume_char()?
             },
             Err(err) => return Err(err),
         };
         loop {
-            match self.peek_char() {
+            match self.lexer.peek_char() {
                 Ok((pos, ch)) => if ch == '\n' {
                     return Err(Error::Unexpected(
                         pos,
@@ -384,63 +187,21 @@ impl HtmlParser {
                 } else if ch == quote {
                     break;
                 } else {
-                    st.push(self.consume_char()?.1);
+                    st.push(self.lexer.consume_char()?.1);
                 },
                 Err(_) => break,
             }
         }
 
-        if self.index == self.input.len() {
+        if self.lexer.eof() {
             Err(Error::Unexpected(
                 self.pos(),
                 "unexpected EOF when parsing string".to_string(),
             ))
         } else {
             // end of string
-            self.consume_char()?;
+            self.lexer.consume_char()?;
             Ok(Token::Str(str_start_pos, st.into_iter().collect()))
-        }
-    }
-
-    // Does not advance parser on failure since it peeks first (maybe it should?)
-    fn try_parse_one_char(&mut self, ch: char) -> Result<Pos> {
-        let _ = self.consume_whitespace()?;
-        self.try_parse_one_char_strict(ch)
-    }
-
-    fn try_parse_one_char_strict(&mut self, ch: char) -> Result<Pos> {
-        let (pos, c) = self.peek_char()?;
-        if c == ch {
-            self.consume_char()?;
-            Ok(pos)
-        } else {
-            Err(Error::Unexpected(
-                pos,
-                format!("expected {}, got {}", ch, self.input[self.index]).to_string(),
-            ))
-        }
-    }
-
-    fn parse_chars(&mut self, chars: &str) -> Result<Pos> {
-        if chars.is_empty() {
-            panic!("Cannot call parse_chars() with empty string");
-        }
-        let chars: Vec<char> = chars.chars().collect();
-        let pos = self.try_parse_one_char(chars[0])?;
-        for &c in chars.iter().skip(1) {
-            self.try_parse_one_char_strict(c)?;
-        }
-        Ok(pos)
-    }
-
-    fn try_parse_chars(&mut self, chars: &str) -> Result<Pos> {
-        let start_pos = self.pos();
-        match self.parse_chars(chars) {
-            ok @ Ok(_) => ok,
-            Err(err) => {
-                self.set_pos(start_pos);
-                Err(err)
-            }
         }
     }
 
@@ -472,7 +233,7 @@ impl HtmlParser {
         let mut attributes: Vec<(Token, Option<Token>)> = vec![];
         loop {
             match self.parse_identifier() {
-                Ok(id) => match self.try_parse_one_char('=') {
+                Ok(id) => match self.lexer.try_parse_one_char('=') {
                     Ok(_) => {
                         let parsers: Vec<ParserFn<Token>> =
                             vec![Self::parse_string, Self::parse_value];
@@ -502,14 +263,14 @@ impl HtmlParser {
     }
 
     fn parse_doctype(&mut self) -> Result<()> {
-        match self.parse_chars("<!DOCTYPE html>") {
+        match self.lexer.parse_chars("<!DOCTYPE html>") {
             Ok(_) => Ok(()),
             Err(err) => Err(err),
         }
     }
 
     fn parse_opening_tag(&mut self) -> Result<DomNode> {
-        let tag_start_pos = self.try_parse_one_char('<')?;
+        let tag_start_pos = self.lexer.try_parse_one_char('<')?;
         let tag_id = match self.parse_identifier_strict() {
             Ok(tag_id) => tag_id,
             Err(err) => {
@@ -530,9 +291,9 @@ impl HtmlParser {
         };
         if node_type.is_void_elem() {
             let attrs = self.parse_tag_attributes()?;
-            match self.try_parse_chars("/>") {
+            match self.lexer.try_parse_chars("/>") {
                 Ok(_) => (),
-                Err(_) => match self.try_parse_chars(">") {
+                Err(_) => match self.lexer.try_parse_chars(">") {
                     Ok(_) => (),
                     Err(_) => {
                         return Err(Error::Unexpected(
@@ -545,7 +306,7 @@ impl HtmlParser {
             Ok(DomNode::new(tag_start_pos, node_type, attrs, vec![]))
         } else {
             let attrs = self.parse_tag_attributes()?;
-            match self.try_parse_one_char('>') {
+            match self.lexer.try_parse_one_char('>') {
                 Ok(_) => (),
                 Err(_) => {
                     return Err(Error::Unexpected(
@@ -559,8 +320,8 @@ impl HtmlParser {
     }
 
     fn parse_closing_tag(&mut self, opening_tag: DomNode) -> Result<DomNode> {
-        let tag_start_pos = self.try_parse_one_char('<')?;
-        let _ = self.try_parse_one_char_strict('/')?;
+        let tag_start_pos = self.lexer.try_parse_one_char('<')?;
+        let _ = self.lexer.try_parse_one_char_strict('/')?;
         let tag_id = self.parse_identifier_strict()?;
         let node_type = match tag_id {
             Token::Identifier(tag_id_pos, tag_id_str) => match NodeType::from_tag_id(&tag_id_str) {
@@ -583,7 +344,7 @@ impl HtmlParser {
                 ).to_string(),
             ));
         }
-        let _ = self.try_parse_one_char('>')?;
+        let _ = self.lexer.try_parse_one_char('>')?;
         Ok(opening_tag)
     }
 
@@ -591,9 +352,9 @@ impl HtmlParser {
         let start_pos = self.pos();
         let mut text: Vec<char> = vec![];
         loop {
-            match self.peek_char() {
+            match self.lexer.peek_char() {
                 Ok((_, ch)) => if ch != '<' {
-                    let (_, ch) = self.consume_char()?;
+                    let (_, ch) = self.lexer.consume_char()?;
                     text.push(ch);
                 } else {
                     break;
@@ -623,7 +384,7 @@ impl HtmlParser {
             return Ok(node);
         }
         loop {
-            match self.consume_whitespace() {
+            match self.lexer.consume_whitespace() {
                 Ok(_) => (),
                 Err(Error::Eof(_)) => {
                     return Err(Error::Unexpected(
@@ -633,13 +394,13 @@ impl HtmlParser {
                 }
                 Err(e) => return Err(e),
             };
-            if self.index >= self.input.len() {
+            if self.lexer.eof() {
                 return Err(Error::Unexpected(
                     node.pos,
                     format!("unclosed element: {:?}", node),
                 ));
             }
-            match self.peek_chars(2) {
+            match self.lexer.peek_chars(2) {
                 Ok((_, chars)) => {
                     if chars == "</" {
                         match self.parse_closing_tag(node.clone()) {
@@ -696,167 +457,6 @@ mod tests {
     use std::fs::File;
     use std::io::prelude::*;
     use std::path::Path;
-
-    #[test]
-    fn test_consume_char1() {
-        let mut parser = HtmlParser::new("a");
-        let res = parser.consume_char();
-        assert_eq!(res, Ok(((0, 1, 1), 'a')));
-        assert_eq!(parser.pos(), (1, 1, 2));
-    }
-
-    #[test]
-    fn test_consume_char_eof() {
-        let mut parser = HtmlParser::new("");
-        let res = parser.consume_char();
-        assert_eq!(res, Err(Error::Eof((0, 1, 1))));
-        assert_eq!(parser.pos(), (0, 1, 1));
-    }
-
-    #[test]
-    fn test_consume_char_eof_with_comment() {
-        let mut parser = HtmlParser::new("<!---->");
-        let res = parser.consume_char();
-        assert_eq!(res, Err(Error::Eof((7, 1, 8))));
-        assert_eq!(parser.pos(), (7, 1, 8));
-    }
-
-    #[test]
-    fn test_consume_char_with_comment1() {
-        let mut parser = HtmlParser::new("<!---->\n");
-        let res = parser.consume_char();
-        assert_eq!(res, Ok(((7, 1, 8), '\n')));
-        assert_eq!(parser.pos(), (8, 2, 1));
-    }
-
-    #[test]
-    fn test_consume_char_with_fake_comment() {
-        let mut parser = HtmlParser::new("<!- --->a");
-        let res = parser.consume_char();
-        assert_eq!(res, Ok(((0, 1, 1), '<')));
-        assert_eq!(parser.pos(), (1, 1, 2));
-    }
-
-    #[test]
-    fn test_consume_char_with_newline_in_comment() {
-        let mut parser = HtmlParser::new("<!--\n-->a");
-        let res = parser.consume_char();
-        assert_eq!(res, Ok(((8, 2, 4), 'a')));
-        assert_eq!(parser.pos(), (9, 2, 5));
-    }
-
-    #[test]
-    fn test_consume_char_with_unclosed_comment() {
-        let mut parser = HtmlParser::new("<!-- a");
-        let res = parser.consume_char();
-        assert_eq!(res, Ok(((0, 1, 1), '<')));
-        assert_eq!(parser.pos(), (1, 1, 2));
-    }
-
-    #[test]
-    fn test_peek_char1() {
-        let mut parser = HtmlParser::new("a");
-        let res = parser.peek_char();
-        assert_eq!(res, Ok(((0, 1, 1), 'a')));
-    }
-
-    #[test]
-    fn test_peek_char_eof() {
-        let mut parser = HtmlParser::new("");
-        let res = parser.peek_char();
-        assert_eq!(res, Err(Error::Eof((0, 1, 1))));
-    }
-
-    #[test]
-    fn test_peek_char_eof_with_comment() {
-        let mut parser = HtmlParser::new("<!---->");
-        let res = parser.peek_char();
-        assert_eq!(res, Err(Error::Eof((7, 1, 8))));
-    }
-
-    #[test]
-    fn test_peek_char_with_comment1() {
-        let mut parser = HtmlParser::new("<!---->a");
-        let res = parser.peek_char();
-        assert_eq!(res, Ok(((7, 1, 8), 'a')));
-    }
-
-    #[test]
-    fn test_peek_char_with_fake_comment() {
-        let mut parser = HtmlParser::new("<!- --->a");
-        let res = parser.peek_char();
-        assert_eq!(res, Ok(((0, 1, 1), '<')));
-    }
-
-    #[test]
-    fn test_peek_char_with_newline_in_comment() {
-        let mut parser = HtmlParser::new("<!--\n-->a");
-        let res = parser.peek_char();
-        assert_eq!(res, Ok(((8, 2, 4), 'a')));
-    }
-
-    #[test]
-    fn test_peek_char_with_unclosed_comment() {
-        let mut parser = HtmlParser::new("<!-- a");
-        let res = parser.peek_char();
-        assert_eq!(res, Ok(((0, 1, 1), '<')));
-    }
-
-    #[test]
-    fn test_consume_whitespace1() {
-        let mut parser = HtmlParser::new(" ab");
-        let res = parser.consume_whitespace();
-        assert_eq!(res, Ok(()));
-        assert_eq!(parser.pos(), (1, 1, 2));
-    }
-
-    #[test]
-    fn test_consume_whitespace2() {
-        let mut parser = HtmlParser::new("ab");
-        let res = parser.consume_whitespace();
-        assert_eq!(res, Ok(()));
-        assert_eq!(parser.pos(), (0, 1, 1));
-    }
-
-    #[test]
-    fn test_consume_whitespace_with_comment1() {
-        let mut parser = HtmlParser::new("<!-- --> ");
-        let res = parser.consume_whitespace();
-        assert_eq!(res, Ok(()));
-        assert_eq!(parser.pos(), (9, 1, 10));
-    }
-
-    #[test]
-    fn test_consume_whitespace_with_comment2() {
-        let mut parser = HtmlParser::new("<!--\n--> ");
-        let res = parser.consume_whitespace();
-        assert_eq!(res, Ok(()));
-        assert_eq!(parser.pos(), (9, 2, 5));
-    }
-
-    #[test]
-    fn test_parse_chars1() {
-        let mut parser = HtmlParser::new("  abc");
-        let res = parser.parse_chars("ab");
-        assert_eq!(res, Ok((2, 1, 3)));
-        assert_eq!(parser.pos(), (4, 1, 5));
-    }
-
-    #[test]
-    fn test_parse_chars2() {
-        let mut parser = HtmlParser::new("  a");
-        let res = parser.parse_chars("ab");
-        assert_eq!(res, Err(Error::Eof((3, 1, 4))));
-        assert_eq!(parser.pos(), (3, 1, 4));
-    }
-
-    #[test]
-    fn test_parse_chars_with_comments() {
-        let mut parser = HtmlParser::new(" <!-- --> a<!-- -->bc");
-        let res = parser.parse_chars("ab");
-        assert_eq!(res, Ok((10, 1, 11)));
-        assert_eq!(parser.pos(), (20, 1, 21));
-    }
 
     #[test]
     fn test_parse_identifier1() {

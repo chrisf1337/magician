@@ -2,15 +2,15 @@ use error::{Error, Pos, Result};
 
 pub struct Lexer {
     input: Vec<char>,
-    index: usize,
-    row: usize,
-    col: usize,
+    pub index: usize,
+    pub row: usize,
+    pub col: usize,
     block_comment_start: String,
     block_comment_end: String,
 }
 
 impl Lexer {
-    fn new(input: &str, block_comment_start: &str, block_comment_end: &str) -> Lexer {
+    pub fn new(input: &str, block_comment_start: &str, block_comment_end: &str) -> Lexer {
         Lexer {
             input: input.chars().collect(),
             index: 0,
@@ -21,14 +21,18 @@ impl Lexer {
         }
     }
 
-    fn set_pos(&mut self, pos: Pos) {
+    pub fn set_pos(&mut self, pos: Pos) {
         self.index = pos.0;
         self.row = pos.1;
         self.col = pos.2;
     }
 
-    fn pos(&self) -> Pos {
+    pub fn pos(&self) -> Pos {
         (self.index, self.row, self.col)
+    }
+
+    pub fn eof(&self) -> bool {
+        self.index >= self.input.len()
     }
 
     fn get_char(&self, i: usize) -> Result<char> {
@@ -70,7 +74,7 @@ impl Lexer {
         }
     }
 
-    fn consume_char(&mut self) -> Result<(Pos, char)> {
+    pub fn consume_char(&mut self) -> Result<(Pos, char)> {
         // This code looks bad...
         // Check for comment
         let mut in_comment = false;
@@ -126,7 +130,7 @@ impl Lexer {
         }
     }
 
-    fn peek_chars(&mut self, mut n: i32) -> Result<(Pos, String)> {
+    pub fn peek_chars(&mut self, mut n: i32) -> Result<(Pos, String)> {
         let start_pos = self.pos();
         let mut chars = String::new();
         let (pos, ch) = match self.consume_char() {
@@ -153,7 +157,7 @@ impl Lexer {
         Ok((pos, chars))
     }
 
-    fn peek_char(&mut self) -> Result<(Pos, char)> {
+    pub fn peek_char(&mut self) -> Result<(Pos, char)> {
         let start_pos = self.pos();
         match self.consume_char() {
             Ok((pos, ch)) => {
@@ -167,7 +171,7 @@ impl Lexer {
         }
     }
 
-    fn consume_whitespace(&mut self) -> Result<()> {
+    pub fn consume_whitespace(&mut self) -> Result<()> {
         let mut found_whitespace = false;
         loop {
             match self.peek_char() {
@@ -200,12 +204,12 @@ impl Lexer {
     }
 
     // Does not advance parser on failure since it peeks first (maybe it should?)
-    fn try_parse_one_char(&mut self, ch: char) -> Result<Pos> {
+    pub fn try_parse_one_char(&mut self, ch: char) -> Result<Pos> {
         let _ = self.consume_whitespace()?;
         self.try_parse_one_char_strict(ch)
     }
 
-    fn try_parse_one_char_strict(&mut self, ch: char) -> Result<Pos> {
+    pub fn try_parse_one_char_strict(&mut self, ch: char) -> Result<Pos> {
         let (pos, c) = self.peek_char()?;
         if c == ch {
             self.consume_char()?;
@@ -218,7 +222,7 @@ impl Lexer {
         }
     }
 
-    fn parse_chars(&mut self, chars: &str) -> Result<Pos> {
+    pub fn parse_chars(&mut self, chars: &str) -> Result<Pos> {
         if chars.is_empty() {
             panic!("Cannot call parse_chars() with empty string");
         }
@@ -230,7 +234,7 @@ impl Lexer {
         Ok(pos)
     }
 
-    fn try_parse_chars(&mut self, chars: &str) -> Result<Pos> {
+    pub fn try_parse_chars(&mut self, chars: &str) -> Result<Pos> {
         let start_pos = self.pos();
         match self.parse_chars(chars) {
             ok @ Ok(_) => ok,
