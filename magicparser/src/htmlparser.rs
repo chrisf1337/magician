@@ -3,10 +3,14 @@ use lexer::Lexer;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Token {
-    Str(Pos, String),               // "..." or '...' (no support for quoted entities)
-    ElementIdentifier(Pos, String), // ascii string starting with a letter and may contain letters or numbers
-    AttrIdentifier(Pos, String), // ascii string starting with a letter and may contain letters, numbers, _, or -
-    Value(Pos, String),          // any string not containing whitespace, <, or >
+    // "..." or '...' (no support for quoted entities)
+    Str(Pos, String),
+    // ascii string starting with a letter and may contain letters or numbers
+    ElementIdentifier(Pos, String),
+    // ascii string starting with a letter and may contain letters, numbers, _, or -
+    AttrIdentifier(Pos, String),
+    // any string not containing whitespace, <, or >
+    Value(Pos, String),
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]

@@ -241,6 +241,34 @@ impl Lexer {
         Ok(pos)
     }
 
+    pub fn parse_chars_list(&mut self, chars_list: Vec<&str>) -> Result<(Pos, String)> {
+        if chars_list.len() == 0 {
+            panic!("Cannot call parse_chars_list() with empty list");
+        }
+        for &chars in chars_list.iter() {
+            match self.try_parse_chars(chars) {
+                Ok(pos) => return Ok((pos, chars.to_string())),
+                Err(..) => (),
+            }
+        }
+        Err(Error::Unexpected(
+            self.pos(),
+            format!("parse_chars_list: expected {:?}", chars_list),
+        ))
+    }
+
+    pub fn parse_chars_strict(&mut self, chars: &str) -> Result<Pos> {
+        if chars.is_empty() {
+            panic!("Cannot call parse_chars() with empty string");
+        }
+        let chars: Vec<char> = chars.chars().collect();
+        let pos = self.try_parse_one_char_strict(chars[0])?;
+        for &c in chars.iter().skip(1) {
+            self.try_parse_one_char_strict(c)?;
+        }
+        Ok(pos)
+    }
+
     pub fn try_parse_chars(&mut self, chars: &str) -> Result<Pos> {
         let start_pos = self.pos();
         match self.parse_chars(chars) {
@@ -443,5 +471,27 @@ mod tests {
         let res = lexer.parse_chars("ab");
         assert_eq!(res, Ok((18, 1, 19)));
         assert_eq!(lexer.pos(), (28, 1, 29));
+    }
+
+    #[test]
+    fn test_parse_chars_list() {
+        let mut lexer = Lexer::new("abc", "", "");
+        let res = lexer.parse_chars_list(vec!["123", "ab"]);
+        assert_eq!(res, Ok(((0, 1, 1), "ab".to_string())));
+        assert_eq!(lexer.pos(), (2, 1, 3));
+    }
+
+    #[test]
+    fn test_parse_chars_list_fail() {
+        let mut lexer = Lexer::new("abc", "", "");
+        let res = lexer.parse_chars_list(vec!["123", "bc"]);
+        assert_eq!(
+            res,
+            Err(Error::Unexpected(
+                (0, 1, 1),
+                "parse_chars_list: expected [\"123\", \"bc\"]".to_string()
+            ))
+        );
+        assert_eq!(lexer.pos(), (0, 1, 1));
     }
 }
