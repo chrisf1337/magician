@@ -6,7 +6,7 @@ pub enum Token {
     // "..." or '...' (no support for quoted entities)
     Str(Pos, String),
     // ascii string starting with a letter and may contain letters or numbers
-    ElementIdentifier(Pos, String),
+    EltIdentifier(Pos, String),
     // ascii string starting with a letter and may contain letters, numbers, _, or -
     AttrIdentifier(Pos, String),
     // any string not containing whitespace, <, or >
@@ -165,10 +165,7 @@ impl HtmlParser {
                 "expected element identifier".to_string(),
             ))
         } else {
-            Ok(Token::ElementIdentifier(
-                start_pos,
-                id.into_iter().collect(),
-            ))
+            Ok(Token::EltIdentifier(start_pos, id.into_iter().collect()))
         }
     }
 
@@ -320,7 +317,7 @@ impl HtmlParser {
             }
         };
         let node_type = match tag_id {
-            Token::ElementIdentifier(tag_id_pos, tag_id_str) => {
+            Token::EltIdentifier(tag_id_pos, tag_id_str) => {
                 match NodeType::from_tag_id(&tag_id_str) {
                     Some(node_type) => node_type,
                     None => {
@@ -368,7 +365,7 @@ impl HtmlParser {
         let _ = self.lexer.try_parse_one_char_strict('/')?;
         let tag_id = self.parse_element_identifier_strict()?;
         let node_type = match tag_id {
-            Token::ElementIdentifier(tag_id_pos, tag_id_str) => {
+            Token::EltIdentifier(tag_id_pos, tag_id_str) => {
                 match NodeType::from_tag_id(&tag_id_str) {
                     Some(node_type) => node_type,
                     None => {
@@ -508,10 +505,7 @@ mod tests {
     fn test_parse_element_identifier_strict1() {
         let mut parser = HtmlParser::new("asdf");
         let res = parser.parse_element_identifier_strict();
-        assert_eq!(
-            res,
-            Ok(Token::ElementIdentifier((0, 1, 1), "asdf".to_string()))
-        );
+        assert_eq!(res, Ok(Token::EltIdentifier((0, 1, 1), "asdf".to_string())));
         assert_eq!(parser.pos(), (4, 1, 5));
     }
 
@@ -521,7 +515,7 @@ mod tests {
         let res = parser.parse_element_identifier_strict();
         assert_eq!(
             res,
-            Ok(Token::ElementIdentifier((0, 1, 1), "a1s2f".to_string()))
+            Ok(Token::EltIdentifier((0, 1, 1), "a1s2f".to_string()))
         );
         assert_eq!(parser.pos(), (5, 1, 6));
     }
@@ -552,10 +546,7 @@ mod tests {
     fn test_parse_element_identifier_strict_with_hyphen() {
         let mut parser = HtmlParser::new("ab-cd");
         let res = parser.parse_element_identifier_strict();
-        assert_eq!(
-            res,
-            Ok(Token::ElementIdentifier((0, 1, 1), "ab".to_string()))
-        );
+        assert_eq!(res, Ok(Token::EltIdentifier((0, 1, 1), "ab".to_string())));
         assert_eq!(parser.pos(), (2, 1, 3));
     }
 
@@ -589,10 +580,7 @@ mod tests {
     fn test_parse_element_identifier_strict_with_underscore() {
         let mut parser = HtmlParser::new("a_b");
         let res = parser.parse_element_identifier_strict();
-        assert_eq!(
-            res,
-            Ok(Token::ElementIdentifier((0, 1, 1), "a".to_string()))
-        );
+        assert_eq!(res, Ok(Token::EltIdentifier((0, 1, 1), "a".to_string())));
         assert_eq!(parser.pos(), (1, 1, 2));
     }
 
@@ -658,10 +646,7 @@ mod tests {
     fn test_parse_element_identifier_strict_ignores_comments2() {
         let mut parser = HtmlParser::new("a<!--\n-->sdf");
         let res = parser.parse_element_identifier_strict();
-        assert_eq!(
-            res,
-            Ok(Token::ElementIdentifier((0, 1, 1), "asdf".to_string()))
-        );
+        assert_eq!(res, Ok(Token::EltIdentifier((0, 1, 1), "asdf".to_string())));
         assert_eq!(parser.pos(), (12, 2, 7));
     }
 

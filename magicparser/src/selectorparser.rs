@@ -37,7 +37,7 @@ type ParserFn<T> = fn(&mut SelectorParser) -> Result<T>;
 #[derive(Debug, Eq, PartialEq)]
 pub enum Token {
     // ascii string starting with a letter and may contain letters or numbers
-    ElementIdentifier(Pos, String),
+    EltIdentifier(Pos, String),
     // ascii string starting with a letter and may contain letters, numbers, _, or -
     AttrIdentifier(Pos, String),
     // "..." or '...' (no support for quoted entities)
@@ -230,10 +230,7 @@ impl SelectorParser {
                 "expected element identifier".to_string(),
             ))
         } else {
-            Ok(Token::ElementIdentifier(
-                start_pos,
-                id.into_iter().collect(),
-            ))
+            Ok(Token::EltIdentifier(start_pos, id.into_iter().collect()))
         }
     }
 
@@ -391,7 +388,7 @@ mod tests {
         assert_eq!(
             res,
             Ok(Selector::Simple(SimpleSelector::new_with(
-                Some(Token::ElementIdentifier((0, 1, 1), "abcd".to_string())),
+                Some(Token::EltIdentifier((0, 1, 1), "abcd".to_string())),
                 None,
                 vec![],
                 false
@@ -455,7 +452,7 @@ mod tests {
         assert_eq!(
             res,
             Ok(Selector::Simple(SimpleSelector::new_with(
-                Some(Token::ElementIdentifier((0, 1, 1), "ab".to_string())),
+                Some(Token::EltIdentifier((0, 1, 1), "ab".to_string())),
                 Some(Token::AttrIdentifier((3, 1, 4), "id".to_string())),
                 vec![
                     Token::AttrIdentifier((6, 1, 7), "cl1".to_string()),
@@ -506,7 +503,7 @@ mod tests {
         assert_eq!(
             res,
             Ok(Selector::Simple(SimpleSelector::new_with(
-                Some(Token::ElementIdentifier((0, 1, 1), "ab".to_string())),
+                Some(Token::EltIdentifier((0, 1, 1), "ab".to_string())),
                 Some(Token::AttrIdentifier((3, 1, 4), "id".to_string())),
                 vec![
                     Token::AttrIdentifier((7, 1, 8), "cl1".to_string()),
