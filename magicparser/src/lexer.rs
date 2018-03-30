@@ -241,7 +241,7 @@ impl Lexer {
         Ok(pos)
     }
 
-    pub fn parse_chars_list(&mut self, chars_list: Vec<&str>) -> Result<(Pos, String)> {
+    pub fn try_parse_chars_list(&mut self, chars_list: Vec<&str>) -> Result<(Pos, String)> {
         if chars_list.len() == 0 {
             panic!("Cannot call parse_chars_list() with empty list");
         }
@@ -475,16 +475,16 @@ mod tests {
 
     #[test]
     fn test_parse_chars_list() {
-        let mut lexer = Lexer::new("abc", "", "");
-        let res = lexer.parse_chars_list(vec!["123", "ab"]);
-        assert_eq!(res, Ok(((0, 1, 1), "ab".to_string())));
-        assert_eq!(lexer.pos(), (2, 1, 3));
+        let mut lexer = Lexer::new(" abc", "", "");
+        let res = lexer.try_parse_chars_list(vec!["123", "ab"]);
+        assert_eq!(res, Ok(((1, 1, 2), "ab".to_string())));
+        assert_eq!(lexer.pos(), (3, 1, 4));
     }
 
     #[test]
     fn test_parse_chars_list_fail() {
-        let mut lexer = Lexer::new("abc", "", "");
-        let res = lexer.parse_chars_list(vec!["123", "bc"]);
+        let mut lexer = Lexer::new(" abc", "", "");
+        let res = lexer.try_parse_chars_list(vec!["123", "bc"]);
         assert_eq!(
             res,
             Err(Error::Unexpected(
