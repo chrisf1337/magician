@@ -133,7 +133,7 @@ impl HtmlParser {
 
     // Parser pos *must* be at the start of the element identifier, or an error
     // will be returned
-    fn parse_element_identifier_strict(&mut self) -> Result<Token> {
+    fn parse_elt_identifier_strict(&mut self) -> Result<Token> {
         let start_pos = self.pos();
         let mut id: Vec<char> = vec![];
         match self.lexer.peek_char() {
@@ -255,14 +255,14 @@ impl HtmlParser {
         }
     }
 
-    fn try_parse<T>(&mut self, parsers: &[ParserFn<T>], err_msg: &str) -> Result<T> {
+    fn try_parsers<T>(&mut self, parsers: &[ParserFn<T>], err_msg: &str) -> Result<T> {
         if parsers.is_empty() {
             return Err(Error::Unexpected(self.pos(), err_msg.to_string()));
         }
         let parser = parsers[0];
         match self.try(parser) {
             ok @ Ok(_) => ok,
-            Err(_) => self.try_parse(&parsers[1..], err_msg),
+            Err(_) => self.try_parsers(&parsers[1..], err_msg),
         }
     }
 
@@ -276,7 +276,7 @@ impl HtmlParser {
                     Ok(_) => {
                         let parsers: Vec<ParserFn<Token>> =
                             vec![Self::parse_string, Self::parse_value];
-                        match self.try_parse(&parsers[..], "expected attribute value") {
+                        match self.try_parsers(&parsers[..], "expected attribute value") {
                             Ok(val_token) => {
                                 attributes.push((id, Some(val_token)));
                                 next_start_pos = self.pos();
@@ -310,7 +310,7 @@ impl HtmlParser {
 
     fn parse_opening_tag(&mut self) -> Result<DomNode> {
         let tag_start_pos = self.lexer.try_parse_one_char('<')?;
-        let tag_id = match self.parse_element_identifier_strict() {
+        let tag_id = match self.parse_elt_identifier_strict() {
             Ok(tag_id) => tag_id,
             Err(err) => {
                 return Err(err);
@@ -323,7 +323,7 @@ impl HtmlParser {
                     None => {
                         return Err(Error::Unexpected(
                             tag_id_pos,
-                            format!("unexpected node type: {}", tag_id_str).to_string(),
+                            format!("unexpected node type: {}", tag_id_str),
                         ));
                     }
                 }
@@ -363,7 +363,7 @@ impl HtmlParser {
     fn parse_closing_tag(&mut self, opening_tag: DomNode) -> Result<DomNode> {
         let tag_start_pos = self.lexer.try_parse_one_char('<')?;
         let _ = self.lexer.try_parse_one_char_strict('/')?;
-        let tag_id = self.parse_element_identifier_strict()?;
+        let tag_id = self.parse_elt_identifier_strict()?;
         let node_type = match tag_id {
             Token::EltIdentifier(tag_id_pos, tag_id_str) => {
                 match NodeType::from_tag_id(&tag_id_str) {
@@ -371,7 +371,7 @@ impl HtmlParser {
                     None => {
                         return Err(Error::Unexpected(
                             tag_id_pos,
-                            format!("unexpected node type: {}", tag_id_str).to_string(),
+                            format!("unexpected node type: {}", tag_id_str),
                         ));
                     }
                 }
@@ -384,7 +384,7 @@ impl HtmlParser {
                 format!(
                     "expected closing tag for {:?}, got {:?}",
                     opening_tag.node_type, node_type
-                ).to_string(),
+                ),
             ));
         }
         let _ = self.lexer.try_parse_one_char('>')?;
@@ -502,17 +502,17 @@ mod tests {
     use std::path::Path;
 
     #[test]
-    fn test_parse_element_identifier_strict1() {
+    fn test_parse_elt_identifier_strict1() {
         let mut parser = HtmlParser::new("asdf");
-        let res = parser.parse_element_identifier_strict();
+        let res = parser.parse_elt_identifier_strict();
         assert_eq!(res, Ok(Token::EltIdentifier((0, 1, 1), "asdf".to_string())));
         assert_eq!(parser.pos(), (4, 1, 5));
     }
 
     #[test]
-    fn test_parse_element_identifier_strict2() {
+    fn test_parse_elt_identifier_strict2() {
         let mut parser = HtmlParser::new("a1s2f");
-        let res = parser.parse_element_identifier_strict();
+        let res = parser.parse_elt_identifier_strict();
         assert_eq!(
             res,
             Ok(Token::EltIdentifier((0, 1, 1), "a1s2f".to_string()))
@@ -543,9 +543,9 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_element_identifier_strict_with_hyphen() {
+    fn test_parse_elt_identifier_strict_with_hyphen() {
         let mut parser = HtmlParser::new("ab-cd");
-        let res = parser.parse_element_identifier_strict();
+        let res = parser.parse_elt_identifier_strict();
         assert_eq!(res, Ok(Token::EltIdentifier((0, 1, 1), "ab".to_string())));
         assert_eq!(parser.pos(), (2, 1, 3));
     }
@@ -577,9 +577,9 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_element_identifier_strict_with_underscore() {
+    fn test_parse_elt_identifier_strict_with_underscore() {
         let mut parser = HtmlParser::new("a_b");
-        let res = parser.parse_element_identifier_strict();
+        let res = parser.parse_elt_identifier_strict();
         assert_eq!(res, Ok(Token::EltIdentifier((0, 1, 1), "a".to_string())));
         assert_eq!(parser.pos(), (1, 1, 2));
     }
@@ -593,9 +593,9 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_element_identifier_strict_with_underscore_fail() {
+    fn test_parse_elt_identifier_strict_with_underscore_fail() {
         let mut parser = HtmlParser::new("_ab");
-        let res = parser.parse_element_identifier_strict();
+        let res = parser.parse_elt_identifier_strict();
         assert_eq!(
             res,
             Err(Error::Unexpected(
@@ -643,9 +643,9 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_element_identifier_strict_ignores_comments2() {
+    fn test_parse_elt_identifier_strict_ignores_comments2() {
         let mut parser = HtmlParser::new("a<!--\n-->sdf");
-        let res = parser.parse_element_identifier_strict();
+        let res = parser.parse_elt_identifier_strict();
         assert_eq!(res, Ok(Token::EltIdentifier((0, 1, 1), "asdf".to_string())));
         assert_eq!(parser.pos(), (12, 2, 7));
     }
@@ -662,9 +662,9 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_element_identifier_strict_fail1() {
+    fn test_parse_elt_identifier_strict_fail1() {
         let mut parser = HtmlParser::new("1sdf");
-        let res = parser.parse_element_identifier_strict();
+        let res = parser.parse_elt_identifier_strict();
         assert_eq!(
             res,
             Err(Error::Unexpected(
@@ -950,7 +950,7 @@ mod tests {
         let mut parser = HtmlParser::new("abc");
         let parser_fns: Vec<fn(&mut HtmlParser) -> Result<Token>> =
             vec![HtmlParser::parse_attr_identifier, HtmlParser::parse_value];
-        let res = parser.try_parse(&parser_fns[..], "");
+        let res = parser.try_parsers(&parser_fns[..], "");
         assert_eq!(res, Ok(Token::AttrIdentifier((0, 1, 1), "abc".to_string())));
         assert_eq!(parser.pos(), (3, 1, 4));
     }
@@ -960,7 +960,7 @@ mod tests {
         let mut parser = HtmlParser::new("123");
         let parser_fns: Vec<fn(&mut HtmlParser) -> Result<Token>> =
             vec![HtmlParser::parse_attr_identifier, HtmlParser::parse_value];
-        let res = parser.try_parse(&parser_fns[..], "");
+        let res = parser.try_parsers(&parser_fns[..], "");
         assert_eq!(res, Ok(Token::Value((0, 1, 1), "123".to_string())));
         assert_eq!(parser.pos(), (3, 1, 4));
     }
@@ -970,7 +970,7 @@ mod tests {
         let mut parser = HtmlParser::new("<");
         let parser_fns: Vec<fn(&mut HtmlParser) -> Result<Token>> =
             vec![HtmlParser::parse_attr_identifier, HtmlParser::parse_value];
-        let res = parser.try_parse(&parser_fns[..], "error message");
+        let res = parser.try_parsers(&parser_fns[..], "error message");
         assert_eq!(
             res,
             Err(Error::Unexpected((0, 1, 1), "error message".to_string()))
@@ -1039,7 +1039,7 @@ mod tests {
             res,
             Err(Error::Unexpected(
                 (0, 1, 1),
-                format!("unclosed tag: {:?}", NodeType::Html).to_string()
+                format!("unclosed tag: {:?}", NodeType::Html)
             ))
         );
         assert_eq!(parser.pos(), (6, 1, 7));
@@ -1067,7 +1067,7 @@ mod tests {
             res,
             Err(Error::Unexpected(
                 (0, 1, 1),
-                format!("unclosed tag: {:?}", NodeType::Body).to_string()
+                format!("unclosed tag: {:?}", NodeType::Body)
             ))
         );
         assert_eq!(parser.pos(), (13, 1, 14));
@@ -1127,7 +1127,7 @@ mod tests {
                 format!(
                     "unclosed element: {:?}",
                     DomNode::new((0, 1, 1), NodeType::Html, vec![], vec![])
-                ).to_string()
+                )
             ))
         );
         // parser stops at 8 because it sees </ as the start of a closing tag
@@ -1245,7 +1245,7 @@ mod tests {
             res,
             Err(Error::Unexpected(
                 (0, 1, 1),
-                format!("unclosed tag: {:?}", NodeType::Html).to_string()
+                format!("unclosed tag: {:?}", NodeType::Html)
             ))
         );
         assert_eq!(parser.pos(), (0, 1, 1));

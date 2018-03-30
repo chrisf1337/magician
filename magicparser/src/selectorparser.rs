@@ -16,7 +16,7 @@ impl From<SelectorParserError> for Error {
             SelectorParserError::Eof(pos) => Error::Eof(pos),
             SelectorParserError::Unexpected(pos, msg) => Error::Unexpected(pos, msg),
             SelectorParserError::MultipleIds(pos, ids) => {
-                Error::Unexpected(pos, format!("{:?}", ids).to_string())
+                Error::Unexpected(pos, format!("{:?}", ids))
             }
         }
     }
@@ -56,34 +56,34 @@ pub enum AttrSelectorOp {
 
 #[derive(Debug, Eq, PartialEq)]
 struct SimpleSelector {
+    pub pos: Pos,
     pub element_name: Option<Token>,
     pub id: Option<Token>,
-    pub class: Vec<Token>,
+    pub classes: Vec<Token>,
     pub universal: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 struct AttrSelector {
+    pub pos: Pos,
     pub attr: Token,
     pub op_val: Option<(AttrSelectorOp, Token)>,
     pub case_insensitive: bool,
 }
 
 impl SimpleSelector {
-    fn new() -> SimpleSelector {
-        SimpleSelector::new_with(None, None, vec![], false)
-    }
-
-    fn new_with(
+    fn new(
+        pos: Pos,
         element_name: Option<Token>,
         id: Option<Token>,
-        class: Vec<Token>,
+        classes: Vec<Token>,
         universal: bool,
     ) -> SimpleSelector {
         SimpleSelector {
+            pos,
             element_name,
             id,
-            class,
+            classes,
             universal,
         }
     }
@@ -91,11 +91,13 @@ impl SimpleSelector {
 
 impl AttrSelector {
     fn new(
+        pos: Pos,
         attr: Token,
         op_val: Option<(AttrSelectorOp, Token)>,
         case_insensitive: bool,
     ) -> AttrSelector {
         AttrSelector {
+            pos,
             attr,
             op_val,
             case_insensitive,
@@ -105,6 +107,7 @@ impl AttrSelector {
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Selector {
+    Seq(Vec<Selector>),
     Simple(SimpleSelector),
     Attr(AttrSelector),
 }
@@ -141,7 +144,7 @@ impl SelectorParser {
         }
     }
 
-    fn try_parse<T>(&mut self, parsers: &[ParserFn<T>], err_msg: &str) -> Result<T> {
+    fn try_parsers<T>(&mut self, parsers: &[ParserFn<T>], err_msg: &str) -> Result<T> {
         if parsers.is_empty() {
             return Err(SelectorParserError::Unexpected(
                 self.pos(),
@@ -151,7 +154,7 @@ impl SelectorParser {
         let parser = parsers[0];
         match self.try(parser) {
             ok @ Ok(_) => ok,
-            Err(_) => self.try_parse(&parsers[1..], err_msg),
+            Err(_) => self.try_parsers(&parsers[1..], err_msg),
         }
     }
 
@@ -170,7 +173,7 @@ impl SelectorParser {
             } else {
                 return Err(SelectorParserError::Unexpected(
                     start_pos,
-                    "expected identifier".to_string(),
+                    "expected attribute identifier".to_string(),
                 ));
             },
             Err(err) => return Err(SelectorParserError::from(err)),
@@ -189,7 +192,7 @@ impl SelectorParser {
         if id.is_empty() {
             Err(SelectorParserError::Unexpected(
                 start_pos,
-                "expected identifier".to_string(),
+                "expected attribute identifier".to_string(),
             ))
         } else {
             Ok(Token::AttrIdentifier(start_pos, id.into_iter().collect()))
@@ -198,7 +201,7 @@ impl SelectorParser {
 
     // Parser pos *must* be at the start of the element identifier, or an error
     // will be returned
-    fn parse_element_identifier_strict(&mut self) -> Result<Token> {
+    fn parse_elt_identifier_strict(&mut self) -> Result<Token> {
         let start_pos = self.pos();
         let mut id: Vec<char> = vec![];
         match self.lexer.peek_char() {
@@ -280,51 +283,68 @@ impl SelectorParser {
     }
 
     // CssParser should have trimmed whitespace from the selector string, so we
-    // don't have to worry about consuming whitespace.
+    // don't have to worry about consuming whitespace. In effect, this makes
+    // this parser strict.
     fn parse_simple_selector(&mut self) -> Result<Selector> {
         let start_pos = self.pos();
-        let mut simple_selector = SimpleSelector::new();
+        let mut element_name: Option<Token> = None;
+        let mut classes = vec![];
+        let mut id: Option<Token> = None;
+        let mut universal = false;
+        let mut found = false;
         loop {
             println!("{:?}", self.pos());
             match self.lexer.peek_char() {
                 Ok((_, '.')) => {
                     self.lexer.consume_char()?;
                     let class = self.parse_attr_identifier_strict()?;
-                    simple_selector.class.push(class);
+                    classes.push(class);
+                    found = true;
                 }
                 Ok((_, '#')) => {
                     self.lexer.consume_char()?;
-                    let id = self.parse_attr_identifier_strict()?;
-                    match simple_selector.id {
+                    let new_id = self.parse_attr_identifier_strict()?;
+                    match id {
                         Some(old_id) => {
                             return Err(SelectorParserError::MultipleIds(
                                 start_pos,
-                                format!("{:?} {:?}", old_id, id).to_string(),
+                                format!("{:?} {:?}", old_id, new_id),
                             ))
                         }
                         None => (),
                     }
-                    simple_selector.id = Some(id);
+                    id = Some(new_id);
+                    found = true;
                 }
                 Ok((_, '*')) => {
                     self.lexer.consume_char()?;
-                    simple_selector.universal = true;
+                    universal = true;
+                    found = true;
                 }
-                Ok((_, _)) => match self.parse_element_identifier_strict() {
-                    Ok(element_name) => simple_selector.element_name = Some(element_name),
+                Ok((_, _)) => match self.parse_elt_identifier_strict() {
+                    Ok(elt_name) => {
+                        element_name = Some(elt_name);
+                        found = true;
+                    }
                     Err(..) => break,
                 },
                 Err(..) => break,
             }
         }
-        if simple_selector == SimpleSelector::new() {
+        if !found {
             // empty selector
             Err(SelectorParserError::Unexpected(
                 start_pos,
                 "empty simple selector".to_string(),
             ))
         } else {
-            Ok(Selector::Simple(simple_selector))
+            Ok(Selector::Simple(SimpleSelector::new(
+                start_pos,
+                element_name,
+                id,
+                classes,
+                universal,
+            )))
         }
     }
 
@@ -346,6 +366,7 @@ impl SelectorParser {
         }
     }
 
+    // Also strict (must start with [)
     fn parse_attr_selector(&mut self) -> Result<Selector> {
         let start_pos = self.pos();
         self.lexer.parse_chars_strict("[")?;
@@ -359,7 +380,7 @@ impl SelectorParser {
             Some(..) => {
                 let parsers: Vec<ParserFn<Token>> =
                     vec![Self::parse_attr_identifier, Self::parse_string];
-                Some(self.try_parse(&parsers, "expected value or string")?)
+                Some(self.try_parsers(&parsers, "expected value or string")?)
             }
             None => None,
         };
@@ -370,10 +391,42 @@ impl SelectorParser {
             None => None,
         };
         Ok(Selector::Attr(AttrSelector::new(
+            start_pos,
             attr,
             op_val,
             case_insensitive,
         )))
+    }
+
+    fn parse_selector_seq(&mut self) -> Result<Selector> {
+        let mut selectors = vec![];
+        // first check for a simple selector, which must come first
+        match self.parse_simple_selector() {
+            Ok(sel) => selectors.push(sel),
+            Err(..) => (),
+        }
+        let parsers: Vec<ParserFn<Selector>> = vec![Self::parse_attr_selector];
+        loop {
+            let selector = match self.try_parsers(&parsers, "") {
+                Ok(sel) => sel,
+                Err(SelectorParserError::Unexpected(..)) => break,
+                Err(err) => return Err(err),
+            };
+            selectors.push(selector);
+        }
+        match self.lexer.peek_char() {
+            Ok((_, ch)) => {
+                return Err(SelectorParserError::Unexpected(
+                    self.pos(),
+                    format!(
+                        "unexpected character after parsing selector sequence: {:?}",
+                        ch
+                    ),
+                ))
+            }
+            Err(..) => (),
+        }
+        Ok(Selector::Seq(selectors))
     }
 }
 
@@ -387,11 +440,12 @@ mod tests {
         let res = parser.parse_simple_selector();
         assert_eq!(
             res,
-            Ok(Selector::Simple(SimpleSelector::new_with(
+            Ok(Selector::Simple(SimpleSelector::new(
+                (0, 1, 1),
                 Some(Token::EltIdentifier((0, 1, 1), "abcd".to_string())),
                 None,
                 vec![],
-                false
+                false,
             )))
         );
         assert_eq!(parser.pos(), (4, 1, 5))
@@ -403,11 +457,12 @@ mod tests {
         let res = parser.parse_simple_selector();
         assert_eq!(
             res,
-            Ok(Selector::Simple(SimpleSelector::new_with(
+            Ok(Selector::Simple(SimpleSelector::new(
+                (0, 1, 1),
                 None,
                 Some(Token::AttrIdentifier((1, 1, 2), "id".to_string())),
                 vec![],
-                false
+                false,
             )))
         );
         assert_eq!(parser.pos(), (3, 1, 4))
@@ -419,11 +474,12 @@ mod tests {
         let res = parser.parse_simple_selector();
         assert_eq!(
             res,
-            Ok(Selector::Simple(SimpleSelector::new_with(
+            Ok(Selector::Simple(SimpleSelector::new(
+                (0, 1, 1),
                 None,
                 None,
                 vec![Token::AttrIdentifier((1, 1, 2), "cl".to_string())],
-                false
+                false,
             )))
         );
         assert_eq!(parser.pos(), (3, 1, 4))
@@ -435,11 +491,12 @@ mod tests {
         let res = parser.parse_simple_selector();
         assert_eq!(
             res,
-            Ok(Selector::Simple(SimpleSelector::new_with(
+            Ok(Selector::Simple(SimpleSelector::new(
+                (0, 1, 1),
                 None,
                 None,
                 vec![],
-                true
+                true,
             )))
         );
         assert_eq!(parser.pos(), (1, 1, 2))
@@ -451,14 +508,15 @@ mod tests {
         let res = parser.parse_simple_selector();
         assert_eq!(
             res,
-            Ok(Selector::Simple(SimpleSelector::new_with(
+            Ok(Selector::Simple(SimpleSelector::new(
+                (0, 1, 1),
                 Some(Token::EltIdentifier((0, 1, 1), "ab".to_string())),
                 Some(Token::AttrIdentifier((3, 1, 4), "id".to_string())),
                 vec![
                     Token::AttrIdentifier((6, 1, 7), "cl1".to_string()),
                     Token::AttrIdentifier((10, 1, 11), "cl2".to_string()),
                 ],
-                false
+                false,
             )))
         );
         assert_eq!(parser.pos(), (13, 1, 14))
@@ -490,7 +548,7 @@ mod tests {
                     "{:?} {:?}",
                     Token::AttrIdentifier((3, 1, 4), "id1".to_string()),
                     Token::AttrIdentifier((7, 1, 8), "id2".to_string())
-                ).to_string()
+                )
             ))
         );
         assert_eq!(parser.pos(), (10, 1, 11))
@@ -502,26 +560,28 @@ mod tests {
         let res = parser.parse_simple_selector();
         assert_eq!(
             res,
-            Ok(Selector::Simple(SimpleSelector::new_with(
+            Ok(Selector::Simple(SimpleSelector::new(
+                (0, 1, 1),
                 Some(Token::EltIdentifier((0, 1, 1), "ab".to_string())),
                 Some(Token::AttrIdentifier((3, 1, 4), "id".to_string())),
                 vec![
                     Token::AttrIdentifier((7, 1, 8), "cl1".to_string()),
                     Token::AttrIdentifier((11, 1, 12), "cl2".to_string()),
                 ],
-                true
+                true,
             )))
         );
         assert_eq!(parser.pos(), (14, 1, 15))
     }
 
     #[test]
-    fn test_attribute_selector1() {
+    fn test_parse_attr_selector1() {
         let mut parser = SelectorParser::new("[ abc ]");
         let res = parser.parse_attr_selector();
         assert_eq!(
             res,
             Ok(Selector::Attr(AttrSelector::new(
+                (0, 1, 1),
                 Token::AttrIdentifier((2, 1, 3), "abc".to_string()),
                 None,
                 false,
@@ -531,12 +591,13 @@ mod tests {
     }
 
     #[test]
-    fn test_attribute_selector2() {
+    fn test_parse_attr_selector2() {
         let mut parser = SelectorParser::new("[ a = b i ]");
         let res = parser.parse_attr_selector();
         assert_eq!(
             res,
             Ok(Selector::Attr(AttrSelector::new(
+                (0, 1, 1),
                 Token::AttrIdentifier((2, 1, 3), "a".to_string()),
                 Some((
                     AttrSelectorOp::Exactly((4, 1, 5)),
@@ -549,7 +610,7 @@ mod tests {
     }
 
     #[test]
-    fn test_attribute_selector_fail1() {
+    fn test_parse_attr_selector_fail1() {
         let mut parser = SelectorParser::new("[ a = a/ ]");
         let res = parser.parse_attr_selector();
         assert_eq!(
@@ -560,5 +621,108 @@ mod tests {
             ))
         );
         assert_eq!(parser.pos(), (7, 1, 8));
+    }
+
+    #[test]
+    fn test_parse_attr_selector_fail_empty1() {
+        let mut parser = SelectorParser::new("[]");
+        let res = parser.parse_attr_selector();
+        assert_eq!(
+            res,
+            Err(SelectorParserError::Unexpected(
+                (1, 1, 2),
+                "expected attribute identifier".to_string()
+            ))
+        );
+        assert_eq!(parser.pos(), (1, 1, 2));
+    }
+
+    #[test]
+    fn test_parse_selector_seq1() {
+        let mut parser = SelectorParser::new("a#id[href I][class~='cl']");
+        let res = parser.parse_selector_seq();
+        assert_eq!(
+            res,
+            Ok(Selector::Seq(vec![
+                Selector::Simple(SimpleSelector::new(
+                    (0, 1, 1),
+                    Some(Token::EltIdentifier((0, 1, 1), "a".to_string())),
+                    Some(Token::AttrIdentifier((2, 1, 3), "id".to_string())),
+                    vec![],
+                    false,
+                )),
+                Selector::Attr(AttrSelector::new(
+                    (4, 1, 5),
+                    Token::AttrIdentifier((5, 1, 6), "href".to_string()),
+                    None,
+                    true,
+                )),
+                Selector::Attr(AttrSelector::new(
+                    (12, 1, 13),
+                    Token::AttrIdentifier((13, 1, 14), "class".to_string()),
+                    Some((
+                        AttrSelectorOp::ExactlyOne((18, 1, 19)),
+                        Token::Str((20, 1, 21), "cl".to_string()),
+                    )),
+                    false,
+                )),
+            ]))
+        );
+        assert_eq!(parser.pos(), (25, 1, 26));
+    }
+
+    #[test]
+    fn test_parse_selector_seq2() {
+        let mut parser = SelectorParser::new("[href I][class~='cl']");
+        let res = parser.parse_selector_seq();
+        assert_eq!(
+            res,
+            Ok(Selector::Seq(vec![
+                Selector::Attr(AttrSelector::new(
+                    (0, 1, 1),
+                    Token::AttrIdentifier((1, 1, 2), "href".to_string()),
+                    None,
+                    true,
+                )),
+                Selector::Attr(AttrSelector::new(
+                    (8, 1, 9),
+                    Token::AttrIdentifier((9, 1, 10), "class".to_string()),
+                    Some((
+                        AttrSelectorOp::ExactlyOne((14, 1, 15)),
+                        Token::Str((16, 1, 17), "cl".to_string()),
+                    )),
+                    false,
+                )),
+            ]))
+        );
+        assert_eq!(parser.pos(), (21, 1, 22));
+    }
+
+    #[test]
+    fn test_parse_selector_seq_fail1() {
+        let mut parser = SelectorParser::new("[href I][class~='cl']a");
+        let res = parser.parse_selector_seq();
+        assert_eq!(
+            res,
+            Err(SelectorParserError::Unexpected(
+                (21, 1, 22),
+                "unexpected character after parsing selector sequence: 'a'".to_string()
+            ))
+        );
+        assert_eq!(parser.pos(), (21, 1, 22));
+    }
+
+    #[test]
+    fn test_parse_selector_seq_fail2() {
+        let mut parser = SelectorParser::new("[href I]*[class~='cl']");
+        let res = parser.parse_selector_seq();
+        assert_eq!(
+            res,
+            Err(SelectorParserError::Unexpected(
+                (8, 1, 9),
+                "unexpected character after parsing selector sequence: '*'".to_string()
+            ))
+        );
+        assert_eq!(parser.pos(), (8, 1, 9));
     }
 }
