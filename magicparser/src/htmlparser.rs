@@ -508,6 +508,17 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_identifier_with_underscore_fail() {
+        let mut parser = HtmlParser::new("_ab");
+        let res = parser.parse_identifier();
+        assert_eq!(
+            res,
+            Err(Error::Unexpected((0, 1, 1), "expected identifier".to_string()))
+        );
+        assert_eq!(parser.pos(), (0, 1, 1));
+    }
+
+    #[test]
     fn test_parse_identifier_ignores_whitespace() {
         let mut parser = HtmlParser::new(" asdf");
         let res = parser.parse_identifier();
