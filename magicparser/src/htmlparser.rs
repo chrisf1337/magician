@@ -1,6 +1,5 @@
 use error::{Error, Pos, Result};
 use lexer::Lexer;
-use std::result;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Token {
@@ -112,7 +111,7 @@ impl HtmlParser {
         }
         loop {
             match self.lexer.peek_char() {
-                Ok((_, ch)) => if ch.is_ascii_alphanumeric() || ch == '-' {
+                Ok((_, ch)) => if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
                     id.push(ch);
                     self.lexer.consume_char()?;
                 } else {
@@ -442,7 +441,7 @@ impl HtmlParser {
         }
     }
 
-    pub fn parse(input: &str) -> result::Result<DomNode, Error> {
+    pub fn parse(input: &str) -> Result<DomNode> {
         let mut parser = HtmlParser::new(input);
         let _ = parser.try(HtmlParser::parse_doctype);
         let node = parser.parse_node()?;
@@ -495,6 +494,17 @@ mod tests {
         );
         // parser stops at 0 since it peeks (not consumes) to see if the first char is alphabetic
         assert_eq!(parser.pos(), (0, 1, 1));
+    }
+
+    #[test]
+    fn test_parse_identifier_with_underscore() {
+        let mut parser = HtmlParser::new("a_b");
+        let res = parser.parse_identifier();
+        assert_eq!(
+            res,
+            Ok(Token::Identifier((0, 1, 1), "a_b".to_string()))
+        );
+        assert_eq!(parser.pos(), (3, 1, 4));
     }
 
     #[test]

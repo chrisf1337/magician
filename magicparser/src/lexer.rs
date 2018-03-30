@@ -11,6 +11,12 @@ pub struct Lexer {
 
 impl Lexer {
     pub fn new(input: &str, block_comment_start: &str, block_comment_end: &str) -> Lexer {
+        if block_comment_start.len() > 0 && block_comment_end.len() == 0 {
+            panic!("cannot have non-empty block comment start and empty block comment end");
+        }
+        if block_comment_end.len() > 0 && block_comment_start.len() == 0 {
+            panic!("cannot have non-empty block comment end and empty block comment start");
+        }
         Lexer {
             input: input.chars().collect(),
             index: 0,
@@ -79,38 +85,40 @@ impl Lexer {
         // Check for comment
         let mut in_comment = false;
         let start_pos = self.pos();
-        while self.get_chars(self.index, &self.block_comment_start)
-            .is_ok()
-        {
-            // Look for the end of the comment
-            in_comment = true;
-            let mut found_end = false;
-            self.index += self.block_comment_start.len();
-            self.col += self.block_comment_start.len();
-            while self.index < self.input.len() {
-                if self.get_chars(self.index, &self.block_comment_end).is_ok() {
-                    found_end = true;
-                    break;
-                } else {
-                    match self.get_char(self.index) {
-                        Ok('\n') => {
-                            self.row += 1;
-                            self.col = 1;
+        if self.block_comment_start.len() > 0 {
+            while self.get_chars(self.index, &self.block_comment_start)
+                .is_ok()
+            {
+                // Look for the end of the comment
+                in_comment = true;
+                let mut found_end = false;
+                self.index += self.block_comment_start.len();
+                self.col += self.block_comment_start.len();
+                while self.index < self.input.len() {
+                    if self.get_chars(self.index, &self.block_comment_end).is_ok() {
+                        found_end = true;
+                        break;
+                    } else {
+                        match self.get_char(self.index) {
+                            Ok('\n') => {
+                                self.row += 1;
+                                self.col = 1;
+                            }
+                            _ => self.col += 1,
                         }
-                        _ => self.col += 1,
+                        self.index += 1;
                     }
-                    self.index += 1;
+                }
+                if found_end {
+                    self.index += self.block_comment_end.len();
+                    self.col += self.block_comment_end.len();
+                    in_comment = false;
                 }
             }
-            if found_end {
-                self.index += self.block_comment_end.len();
-                self.col += self.block_comment_end.len();
-                in_comment = false;
+            if in_comment {
+                // reached EOF without finding comment close; consume as regular text
+                self.set_pos(start_pos);
             }
-        }
-        if in_comment {
-            // reached EOF without finding comment close; consume as regular text
-            self.set_pos(start_pos);
         }
         match self.get_char(self.index) {
             Ok('\n') => {
