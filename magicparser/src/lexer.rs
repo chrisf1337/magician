@@ -49,15 +49,15 @@ impl Lexer {
     }
 
     fn get_chars(&self, i: usize, chars: &str) -> Result<()> {
-        println!("get_chars({}, {})", i, chars);
+        // println!("get_chars({}, {})", i, chars);
         if chars.len() == 0 {
             panic!("Cannot call get_chars() with empty string");
         }
         let mut res = self.get_char(i);
         let mut off = 0;
         for c in chars.chars() {
-            println!("{}", off);
-            println!("{:?}", res);
+            // println!("{}", off);
+            // println!("{:?}", res);
             res = res.and_then(|ch| {
                 if ch == c {
                     off += 1;
@@ -81,7 +81,6 @@ impl Lexer {
     }
 
     pub fn consume_char(&mut self) -> Result<(Pos, char)> {
-        // This code looks bad...
         // Check for comment
         let mut in_comment = false;
         let start_pos = self.pos();
