@@ -1,3 +1,4 @@
+use common::ElemType;
 use error::{Error, Pos, Result};
 use lexer::Lexer;
 
@@ -6,7 +7,7 @@ pub enum Token {
     // "..." or '...' (no support for quoted entities)
     Str(Pos, String),
     // ascii string starting with a letter and may contain letters or numbers
-    EltIdentifier(Pos, String),
+    ElemIdentifier(Pos, String),
     // ascii string starting with a letter and may contain letters, numbers, _, or -
     AttrIdentifier(Pos, String),
     // any string not containing whitespace, <, or >
@@ -14,57 +15,23 @@ pub enum Token {
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
-pub enum NodeType {
-    Html,
-    Text(String),
-    Head,
-    Body,
-    Img,
-    H1,
-    P,
-    A,
-}
-
-impl NodeType {
-    fn from_tag_id(tag_id_str: &str) -> Option<NodeType> {
-        match tag_id_str.to_ascii_lowercase().as_ref() {
-            "html" => Some(NodeType::Html),
-            "head" => Some(NodeType::Head),
-            "body" => Some(NodeType::Body),
-            "img" => Some(NodeType::Img),
-            "h1" => Some(NodeType::H1),
-            "p" => Some(NodeType::P),
-            "a" => Some(NodeType::A),
-            _ => None,
-        }
-    }
-
-    fn is_void_elem(&self) -> bool {
-        match self {
-            &NodeType::Img => true,
-            _ => false,
-        }
-    }
-}
-
-#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct DomNode {
     pub pos: Pos,
-    pub node_type: NodeType,
-    pub attrs: Vec<(Token, Option<Token>)>,
+    pub elem_type: ElemType,
+    pub attrs: Vec<(Token, Option<Token>)>, // (AttrIdentifier, Value) or (AttrIdentifier, Str)
     pub children: Vec<DomNode>,
 }
 
 impl DomNode {
     fn new(
         pos: Pos,
-        node_type: NodeType,
+        elem_type: ElemType,
         attrs: Vec<(Token, Option<Token>)>,
         children: Vec<DomNode>,
     ) -> DomNode {
         DomNode {
             pos,
-            node_type,
+            elem_type,
             attrs,
             children,
         }
@@ -133,7 +100,7 @@ impl HtmlParser {
 
     // Parser pos *must* be at the start of the element identifier, or an error
     // will be returned
-    fn parse_elt_identifier_strict(&mut self) -> Result<Token> {
+    fn parse_elem_identifier_strict(&mut self) -> Result<Token> {
         let start_pos = self.pos();
         let mut id: Vec<char> = vec![];
         match self.lexer.peek_char() {
@@ -150,7 +117,7 @@ impl HtmlParser {
         }
         loop {
             match self.lexer.peek_char() {
-                Ok((_, ch)) => if ch.is_ascii_alphanumeric() {
+                Ok((_, ch)) => if ch.is_ascii_alphanumeric() || ch == '-' {
                     id.push(ch);
                     self.lexer.consume_char()?;
                 } else {
@@ -165,7 +132,7 @@ impl HtmlParser {
                 "expected element identifier".to_string(),
             ))
         } else {
-            Ok(Token::EltIdentifier(start_pos, id.into_iter().collect()))
+            Ok(Token::ElemIdentifier(start_pos, id.into_iter().collect()))
         }
     }
 
@@ -310,27 +277,28 @@ impl HtmlParser {
 
     fn parse_opening_tag(&mut self) -> Result<DomNode> {
         let tag_start_pos = self.lexer.try_parse_one_char('<')?;
-        let tag_id = match self.parse_elt_identifier_strict() {
+        let tag_id = match self.parse_elem_identifier_strict() {
             Ok(tag_id) => tag_id,
             Err(err) => {
                 return Err(err);
             }
         };
-        let node_type = match tag_id {
-            Token::EltIdentifier(tag_id_pos, tag_id_str) => {
-                match NodeType::from_tag_id(&tag_id_str) {
-                    Some(node_type) => node_type,
+        let elem_type = match tag_id {
+            Token::ElemIdentifier(tag_id_pos, tag_id_str) => {
+                match ElemType::from_str(&tag_id_str) {
+                    Some(elem_type) => elem_type,
                     None => {
+                        // should be unreachable since from_str() has a catch-all Custom case
                         return Err(Error::Unexpected(
                             tag_id_pos,
-                            format!("unexpected node type: {}", tag_id_str),
+                            format!("unexpected element type: {}", tag_id_str),
                         ));
                     }
                 }
             }
             _ => unreachable!(),
         };
-        if node_type.is_void_elem() {
+        if elem_type.is_void_elem() {
             let attrs = self.parse_tag_attributes()?;
             match self.lexer.try_parse_chars("/>") {
                 Ok(_) => (),
@@ -339,12 +307,12 @@ impl HtmlParser {
                     Err(_) => {
                         return Err(Error::Unexpected(
                             tag_start_pos,
-                            format!("unclosed tag: {:?}", node_type),
+                            format!("unclosed element: {:?}", elem_type),
                         ))
                     }
                 },
             };
-            Ok(DomNode::new(tag_start_pos, node_type, attrs, vec![]))
+            Ok(DomNode::new(tag_start_pos, elem_type, attrs, vec![]))
         } else {
             let attrs = self.parse_tag_attributes()?;
             match self.lexer.try_parse_one_char('>') {
@@ -352,38 +320,39 @@ impl HtmlParser {
                 Err(_) => {
                     return Err(Error::Unexpected(
                         tag_start_pos,
-                        format!("unclosed tag: {:?}", node_type),
+                        format!("unclosed tag: {:?}", elem_type),
                     ));
                 }
             };
-            Ok(DomNode::new(tag_start_pos, node_type, attrs, vec![]))
+            Ok(DomNode::new(tag_start_pos, elem_type, attrs, vec![]))
         }
     }
 
     fn parse_closing_tag(&mut self, opening_tag: DomNode) -> Result<DomNode> {
         let tag_start_pos = self.lexer.try_parse_one_char('<')?;
         let _ = self.lexer.try_parse_one_char_strict('/')?;
-        let tag_id = self.parse_elt_identifier_strict()?;
-        let node_type = match tag_id {
-            Token::EltIdentifier(tag_id_pos, tag_id_str) => {
-                match NodeType::from_tag_id(&tag_id_str) {
-                    Some(node_type) => node_type,
+        let tag_id = self.parse_elem_identifier_strict()?;
+        let elem_type = match tag_id {
+            Token::ElemIdentifier(tag_id_pos, tag_id_str) => {
+                match ElemType::from_str(&tag_id_str) {
+                    Some(elem_type) => elem_type,
                     None => {
+                        // should be unreachable since from_str() has a catch-all Custom case
                         return Err(Error::Unexpected(
                             tag_id_pos,
-                            format!("unexpected node type: {}", tag_id_str),
+                            format!("unexpected element type: {}", tag_id_str),
                         ));
                     }
                 }
             }
             _ => unreachable!(),
         };
-        if opening_tag.node_type != node_type {
+        if opening_tag.elem_type != elem_type {
             return Err(Error::Unexpected(
                 tag_start_pos,
                 format!(
                     "expected closing tag for {:?}, got {:?}",
-                    opening_tag.node_type, node_type
+                    opening_tag.elem_type, elem_type
                 ),
             ));
         }
@@ -409,7 +378,7 @@ impl HtmlParser {
         if s.len() == 0 {
             Err(Error::Unexpected(self.pos(), "empty text node".to_string()))
         } else {
-            Ok(DomNode::new(start_pos, NodeType::Text(s), vec![], vec![]))
+            Ok(DomNode::new(start_pos, ElemType::Text(s), vec![], vec![]))
         }
     }
 
@@ -423,7 +392,7 @@ impl HtmlParser {
                 }
             },
         };
-        if node.node_type.is_void_elem() {
+        if node.elem_type.is_void_elem() {
             return Ok(node);
         }
         loop {
@@ -502,20 +471,23 @@ mod tests {
     use std::path::Path;
 
     #[test]
-    fn test_parse_elt_identifier_strict1() {
+    fn test_parse_elem_identifier_strict1() {
         let mut parser = HtmlParser::new("asdf");
-        let res = parser.parse_elt_identifier_strict();
-        assert_eq!(res, Ok(Token::EltIdentifier((0, 1, 1), "asdf".to_string())));
+        let res = parser.parse_elem_identifier_strict();
+        assert_eq!(
+            res,
+            Ok(Token::ElemIdentifier((0, 1, 1), "asdf".to_string()))
+        );
         assert_eq!(parser.pos(), (4, 1, 5));
     }
 
     #[test]
-    fn test_parse_elt_identifier_strict2() {
+    fn test_parse_elem_identifier_strict2() {
         let mut parser = HtmlParser::new("a1s2f");
-        let res = parser.parse_elt_identifier_strict();
+        let res = parser.parse_elem_identifier_strict();
         assert_eq!(
             res,
-            Ok(Token::EltIdentifier((0, 1, 1), "a1s2f".to_string()))
+            Ok(Token::ElemIdentifier((0, 1, 1), "a1s2f".to_string()))
         );
         assert_eq!(parser.pos(), (5, 1, 6));
     }
@@ -543,11 +515,14 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_elt_identifier_strict_with_hyphen() {
+    fn test_parse_elem_identifier_strict_with_hyphen() {
         let mut parser = HtmlParser::new("ab-cd");
-        let res = parser.parse_elt_identifier_strict();
-        assert_eq!(res, Ok(Token::EltIdentifier((0, 1, 1), "ab".to_string())));
-        assert_eq!(parser.pos(), (2, 1, 3));
+        let res = parser.parse_elem_identifier_strict();
+        assert_eq!(
+            res,
+            Ok(Token::ElemIdentifier((0, 1, 1), "ab-cd".to_string()))
+        );
+        assert_eq!(parser.pos(), (5, 1, 6));
     }
 
     #[test]
@@ -577,10 +552,10 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_elt_identifier_strict_with_underscore() {
+    fn test_parse_elem_identifier_strict_with_underscore() {
         let mut parser = HtmlParser::new("a_b");
-        let res = parser.parse_elt_identifier_strict();
-        assert_eq!(res, Ok(Token::EltIdentifier((0, 1, 1), "a".to_string())));
+        let res = parser.parse_elem_identifier_strict();
+        assert_eq!(res, Ok(Token::ElemIdentifier((0, 1, 1), "a".to_string())));
         assert_eq!(parser.pos(), (1, 1, 2));
     }
 
@@ -593,9 +568,9 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_elt_identifier_strict_with_underscore_fail() {
+    fn test_parse_elem_identifier_strict_with_underscore_fail() {
         let mut parser = HtmlParser::new("_ab");
-        let res = parser.parse_elt_identifier_strict();
+        let res = parser.parse_elem_identifier_strict();
         assert_eq!(
             res,
             Err(Error::Unexpected(
@@ -643,10 +618,13 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_elt_identifier_strict_ignores_comments2() {
+    fn test_parse_elem_identifier_strict_ignores_comments2() {
         let mut parser = HtmlParser::new("a<!--\n-->sdf");
-        let res = parser.parse_elt_identifier_strict();
-        assert_eq!(res, Ok(Token::EltIdentifier((0, 1, 1), "asdf".to_string())));
+        let res = parser.parse_elem_identifier_strict();
+        assert_eq!(
+            res,
+            Ok(Token::ElemIdentifier((0, 1, 1), "asdf".to_string()))
+        );
         assert_eq!(parser.pos(), (12, 2, 7));
     }
 
@@ -662,9 +640,9 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_elt_identifier_strict_fail1() {
+    fn test_parse_elem_identifier_strict_fail1() {
         let mut parser = HtmlParser::new("1sdf");
-        let res = parser.parse_elt_identifier_strict();
+        let res = parser.parse_elem_identifier_strict();
         assert_eq!(
             res,
             Err(Error::Unexpected(
@@ -984,7 +962,7 @@ mod tests {
         let res = parser.parse_opening_tag();
         assert_eq!(
             res,
-            Ok(DomNode::new((0, 1, 1), NodeType::Html, vec![], vec![]),)
+            Ok(DomNode::new((0, 1, 1), ElemType::Html, vec![], vec![]),)
         );
         assert_eq!(parser.pos(), (6, 1, 7));
     }
@@ -997,7 +975,7 @@ mod tests {
             res,
             Ok(DomNode::new(
                 (0, 1, 1),
-                NodeType::Html,
+                ElemType::Html,
                 vec![
                     (
                         Token::AttrIdentifier((6, 1, 7), "a".to_string()),
@@ -1018,7 +996,7 @@ mod tests {
             res,
             Ok(DomNode::new(
                 (0, 1, 1),
-                NodeType::Html,
+                ElemType::Html,
                 vec![
                     (
                         Token::AttrIdentifier((6, 1, 7), "a-1".to_string()),
@@ -1039,7 +1017,7 @@ mod tests {
             res,
             Err(Error::Unexpected(
                 (0, 1, 1),
-                format!("unclosed tag: {:?}", NodeType::Html)
+                format!("unclosed tag: {:?}", ElemType::Html)
             ))
         );
         assert_eq!(parser.pos(), (6, 1, 7));
@@ -1067,7 +1045,7 @@ mod tests {
             res,
             Err(Error::Unexpected(
                 (0, 1, 1),
-                format!("unclosed tag: {:?}", NodeType::Body)
+                format!("unclosed tag: {:?}", ElemType::Body)
             ))
         );
         assert_eq!(parser.pos(), (13, 1, 14));
@@ -1079,7 +1057,7 @@ mod tests {
         let res = parser.parse_node();
         assert_eq!(
             res,
-            Ok(DomNode::new((0, 1, 1), NodeType::Html, vec![], vec![]),)
+            Ok(DomNode::new((0, 1, 1), ElemType::Html, vec![], vec![]),)
         );
         assert_eq!(parser.pos(), (13, 1, 14));
     }
@@ -1109,7 +1087,7 @@ mod tests {
                 (0, 1, 1),
                 format!(
                     "unclosed element: {:?}",
-                    DomNode::new((0, 1, 1), NodeType::Html, vec![], vec![])
+                    DomNode::new((0, 1, 1), ElemType::Html, vec![], vec![])
                 ).to_string()
             ))
         );
@@ -1126,7 +1104,7 @@ mod tests {
                 (0, 1, 1),
                 format!(
                     "unclosed element: {:?}",
-                    DomNode::new((0, 1, 1), NodeType::Html, vec![], vec![])
+                    DomNode::new((0, 1, 1), ElemType::Html, vec![], vec![])
                 )
             ))
         );
@@ -1143,12 +1121,12 @@ mod tests {
             res,
             Ok(DomNode::new(
                 (0, 1, 1),
-                NodeType::Html,
+                ElemType::Html,
                 vec![],
                 vec![
                     DomNode::new(
                         (6, 1, 7),
-                        NodeType::Text("hello".to_string()),
+                        ElemType::Text("hello".to_string()),
                         vec![],
                         vec![],
                     ),
@@ -1166,12 +1144,12 @@ mod tests {
             res,
             Ok(DomNode::new(
                 (0, 1, 1),
-                NodeType::Html,
+                ElemType::Html,
                 vec![],
                 vec![
                     DomNode::new(
                         (7, 1, 8),
-                        NodeType::Text("hello".to_string()),
+                        ElemType::Text("hello".to_string()),
                         vec![],
                         vec![],
                     ),
@@ -1189,16 +1167,16 @@ mod tests {
             res,
             Ok(DomNode::new(
                 (0, 1, 1),
-                NodeType::Html,
+                ElemType::Html,
                 vec![],
                 vec![
                     DomNode::new(
                         (7, 1, 8),
-                        NodeType::Text("hello hello".to_string()),
+                        ElemType::Text("hello hello".to_string()),
                         vec![],
                         vec![],
                     ),
-                    DomNode::new((19, 1, 20), NodeType::Body, vec![], vec![]),
+                    DomNode::new((19, 1, 20), ElemType::Body, vec![], vec![]),
                 ]
             ),)
         );
@@ -1213,12 +1191,12 @@ mod tests {
             res,
             Ok(DomNode::new(
                 (0, 1, 1),
-                NodeType::Html,
+                ElemType::Html,
                 vec![],
                 vec![
                     DomNode::new(
                         (8, 1, 9),
-                        NodeType::Body,
+                        ElemType::Body,
                         vec![
                             (
                                 Token::AttrIdentifier((14, 1, 15), "a".to_string()),
@@ -1245,7 +1223,7 @@ mod tests {
             res,
             Err(Error::Unexpected(
                 (0, 1, 1),
-                format!("unclosed tag: {:?}", NodeType::Html)
+                format!("unclosed tag: {:?}", ElemType::Html)
             ))
         );
         assert_eq!(parser.pos(), (0, 1, 1));
@@ -1261,7 +1239,7 @@ mod tests {
                 (0, 1, 1),
                 format!(
                     "unclosed element: {:?}",
-                    DomNode::new((0, 1, 1), NodeType::Html, vec![], vec![])
+                    DomNode::new((0, 1, 1), ElemType::Html, vec![], vec![])
                 )
             ))
         );
@@ -1278,8 +1256,8 @@ mod tests {
                 (6, 1, 7),
                 format!(
                     "expected closing tag for {:?}, got {:?}",
-                    NodeType::Html,
-                    NodeType::Body
+                    ElemType::Html,
+                    ElemType::Body
                 )
             ))
         );
@@ -1298,8 +1276,8 @@ mod tests {
                 (32, 1, 33),
                 format!(
                     "expected closing tag for {:?}, got {:?}",
-                    NodeType::Html,
-                    NodeType::Body
+                    ElemType::Html,
+                    ElemType::Body
                 )
             ))
         );
@@ -1312,7 +1290,7 @@ mod tests {
         let res = parser.parse_node();
         assert_eq!(
             res,
-            Ok(DomNode::new((0, 1, 1), NodeType::Html, vec![], vec![]))
+            Ok(DomNode::new((0, 1, 1), ElemType::Html, vec![], vec![]))
         );
         assert_eq!(parser.pos(), (21, 1, 22));
     }
@@ -1325,7 +1303,7 @@ mod tests {
             res,
             Ok(DomNode::new(
                 (0, 1, 1),
-                NodeType::Img,
+                ElemType::Img,
                 vec![
                     (
                         Token::AttrIdentifier((5, 1, 6), "src".to_string()),
@@ -1346,7 +1324,7 @@ mod tests {
             res,
             Ok(DomNode::new(
                 (0, 1, 1),
-                NodeType::Img,
+                ElemType::Img,
                 vec![
                     (
                         Token::AttrIdentifier((5, 1, 6), "src".to_string()),
@@ -1367,7 +1345,7 @@ mod tests {
             res,
             Err(Error::Unexpected(
                 (0, 1, 1),
-                "unclosed tag: Img".to_string()
+                "unclosed element: Img".to_string()
             ))
         );
         // parser stops at 15 because parse_tag_attributes() fails on the last /
@@ -1382,7 +1360,7 @@ mod tests {
             res,
             Ok(DomNode::new(
                 (7, 1, 8),
-                NodeType::Img,
+                ElemType::Img,
                 vec![
                     (
                         Token::AttrIdentifier((20, 1, 21), "src".to_string()),
@@ -1406,22 +1384,22 @@ mod tests {
             res,
             Ok(DomNode::new(
                 (16, 2, 1),
-                NodeType::Html,
+                ElemType::Html,
                 vec![],
                 vec![
                     DomNode::new(
                         (23, 3, 1),
-                        NodeType::Body,
+                        ElemType::Body,
                         vec![],
                         vec![
                             DomNode::new(
                                 (31, 5, 1),
-                                NodeType::H1,
+                                ElemType::H1,
                                 vec![],
                                 vec![
                                     DomNode::new(
                                         (35, 5, 5),
-                                        NodeType::Text("My First Heading".to_string()),
+                                        ElemType::Text("My First Heading".to_string()),
                                         vec![],
                                         vec![],
                                     ),
@@ -1429,7 +1407,7 @@ mod tests {
                             ),
                             DomNode::new(
                                 (57, 6, 1),
-                                NodeType::A,
+                                ElemType::A,
                                 vec![
                                     (
                                         Token::AttrIdentifier((60, 6, 4), "href".to_string()),
@@ -1442,7 +1420,7 @@ mod tests {
                                 vec![
                                     DomNode::new(
                                         (88, 6, 32),
-                                        NodeType::Text("Link".to_string()),
+                                        ElemType::Text("Link".to_string()),
                                         vec![],
                                         vec![],
                                     ),
@@ -1450,12 +1428,12 @@ mod tests {
                             ),
                             DomNode::new(
                                 (97, 7, 1),
-                                NodeType::P,
+                                ElemType::P,
                                 vec![],
                                 vec![
                                     DomNode::new(
                                         (100, 7, 4),
-                                        NodeType::Text("My first paragraph.".to_string()),
+                                        ElemType::Text("My first paragraph.".to_string()),
                                         vec![],
                                         vec![],
                                     ),
