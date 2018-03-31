@@ -1,6 +1,7 @@
 use common::Pos;
 use error::{Error, Result};
 use lexer::Lexer;
+use parser::Parser;
 
 type DeclBlock = Vec<(Token, Token)>;
 type Block = (Token, DeclBlock);
@@ -23,25 +24,15 @@ impl CssParser {
         }
     }
 
-    fn set_pos(&mut self, pos: Pos) {
-        self.lexer.index = pos.0;
-        self.lexer.row = pos.1;
-        self.lexer.col = pos.2;
-    }
-
-    fn pos(&self) -> Pos {
-        self.lexer.pos()
-    }
-
     fn parse_selector(&mut self) -> Result<Token> {
-        self.lexer.consume_whitespace()?;
+        self.lexer().consume_whitespace()?;
         let start_pos = self.pos();
         let mut selector: Vec<char> = vec![];
         loop {
-            match self.lexer.peek_char() {
+            match self.lexer().peek_char() {
                 Ok((_, ch)) => if ch != '{' && ch != '\n' && ch != ';' {
                     selector.push(ch);
-                    self.lexer.consume_char()?;
+                    self.lexer().consume_char()?;
                 } else {
                     break;
                 },
@@ -63,13 +54,13 @@ impl CssParser {
     }
 
     fn parse_property(&mut self) -> Result<Token> {
-        let _ = self.lexer.consume_whitespace()?;
+        let _ = self.lexer().consume_whitespace()?;
         let start_pos = self.pos();
         let mut property: Vec<char> = vec![];
-        match self.lexer.peek_char() {
+        match self.lexer().peek_char() {
             Ok((_, ch)) => if ch.is_ascii_alphabetic() {
                 property.push(ch);
-                self.lexer.consume_char()?;
+                self.lexer().consume_char()?;
             } else {
                 return Err(Error::Unexpected(
                     start_pos,
@@ -79,10 +70,10 @@ impl CssParser {
             Err(err) => return Err(err),
         }
         loop {
-            match self.lexer.peek_char() {
+            match self.lexer().peek_char() {
                 Ok((_, ch)) => if ch.is_ascii_alphanumeric() || ch == '-' {
                     property.push(ch);
-                    self.lexer.consume_char()?;
+                    self.lexer().consume_char()?;
                 } else {
                     break;
                 },
@@ -100,14 +91,14 @@ impl CssParser {
     }
 
     fn parse_value(&mut self) -> Result<Token> {
-        let _ = self.lexer.consume_whitespace()?;
+        let _ = self.lexer().consume_whitespace()?;
         let start_pos = self.pos();
         let mut value: Vec<char> = vec![];
         loop {
-            match self.lexer.peek_char() {
+            match self.lexer().peek_char() {
                 Ok((_, ch)) => if ch != ';' {
                     value.push(ch);
-                    self.lexer.consume_char()?;
+                    self.lexer().consume_char()?;
                 } else {
                     break;
                 },
@@ -123,21 +114,21 @@ impl CssParser {
 
     fn parse_decl_block(&mut self) -> Result<DeclBlock> {
         let mut declarations: Vec<(Token, Token)> = vec![];
-        let block_start = self.lexer.parse_chars("{")?;
+        let block_start = self.lexer().parse_chars("{")?;
         loop {
             let property = match self.parse_property() {
                 Ok(p) => p,
                 Err(_) => break,
             };
-            self.lexer.try_parse_chars(":")?;
+            self.lexer().try_parse_chars(":")?;
             let value = self.parse_value()?;
-            match self.lexer.try_parse_chars(";") {
+            match self.lexer().try_parse_chars(";") {
                 Ok(_) => (),
                 Err(_) => break,
             }
             declarations.push((property, value));
         }
-        match self.lexer.parse_chars("}") {
+        match self.lexer().parse_chars("}") {
             Ok(_) => (),
             Err(_) => {
                 return Err(Error::Unexpected(block_start, "unclosed block".to_string()));
@@ -166,6 +157,16 @@ impl CssParser {
     pub fn parse(input: &str) -> Result<Vec<Block>> {
         let mut parser = CssParser::new(input);
         parser.parse_blocks()
+    }
+}
+
+impl Parser<Error> for CssParser {
+    fn lexer(&mut self) -> &mut Lexer {
+        &mut self.lexer
+    }
+
+    fn lexer_immut(&self) -> &Lexer {
+        &self.lexer
     }
 }
 

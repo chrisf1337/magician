@@ -1,6 +1,7 @@
 use common::{ElemType, Pos, Token};
 use error::{Error, Result};
 use lexer::Lexer;
+use parser::Parser;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct DomNode {
@@ -39,111 +40,26 @@ impl HtmlParser {
         }
     }
 
-    fn set_pos(&mut self, pos: Pos) {
-        self.lexer.index = pos.0;
-        self.lexer.row = pos.1;
-        self.lexer.col = pos.2;
-    }
-
-    fn pos(&self) -> Pos {
-        self.lexer.pos()
-    }
-
-    fn parse_attr_identifier(&mut self) -> Result<Token> {
-        let _ = self.lexer.consume_whitespace()?;
-        let start_pos = self.pos();
-        let mut id: Vec<char> = vec![];
-        match self.lexer.peek_char() {
-            Ok((_, ch)) => if ch.is_ascii_alphabetic() {
-                id.push(ch);
-                self.lexer.consume_char()?;
-            } else {
-                return Err(Error::Unexpected(
-                    start_pos,
-                    "expected attribute identifier".to_string(),
-                ));
-            },
-            Err(err) => return Err(err),
-        }
-        loop {
-            match self.lexer.peek_char() {
-                Ok((_, ch)) => if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
-                    id.push(ch);
-                    self.lexer.consume_char()?;
-                } else {
-                    break;
-                },
-                Err(_) => break,
-            }
-        }
-        if id.is_empty() {
-            Err(Error::Unexpected(
-                start_pos,
-                "expected attribute identifier".to_string(),
-            ))
-        } else {
-            Ok(Token::AttrIdentifier(start_pos, id.into_iter().collect()))
-        }
-    }
-
-    // Parser pos *must* be at the start of the element identifier, or an error
-    // will be returned
-    fn parse_elem_identifier_strict(&mut self) -> Result<Token> {
-        let start_pos = self.pos();
-        let mut id: Vec<char> = vec![];
-        match self.lexer.peek_char() {
-            Ok((_, ch)) => if ch.is_ascii_alphabetic() {
-                id.push(ch);
-                self.lexer.consume_char()?;
-            } else {
-                return Err(Error::Unexpected(
-                    start_pos,
-                    "expected element identifier".to_string(),
-                ));
-            },
-            Err(err) => return Err(err),
-        }
-        loop {
-            match self.lexer.peek_char() {
-                Ok((_, ch)) => if ch.is_ascii_alphanumeric() || ch == '-' {
-                    id.push(ch);
-                    self.lexer.consume_char()?;
-                } else {
-                    break;
-                },
-                Err(_) => break,
-            }
-        }
-        if id.is_empty() {
-            Err(Error::Unexpected(
-                start_pos,
-                "expected element identifier".to_string(),
-            ))
-        } else {
-            Ok(Token::ElemIdentifier(start_pos, id.into_iter().collect()))
-        }
-    }
-
     fn parse_value(&mut self) -> Result<Token> {
-        let _ = self.lexer.consume_whitespace()?;
+        let _ = self.lexer().consume_whitespace()?;
         let start_pos = self.pos();
         let mut id: Vec<char> = vec![];
-        match self.lexer.peek_char() {
+        match self.lexer().peek_char() {
             Ok((_, ch)) => if ch != '<' && ch != '>' && ch != '"' && ch != '\'' {
                 id.push(ch);
-                self.lexer.consume_char()?;
+                self.lexer().consume_char()?;
             } else {
                 return Err(Error::Unexpected(start_pos, "expected value".to_string()));
             },
             Err(err) => return Err(err),
         }
         loop {
-            match self.lexer.peek_char() {
+            match self.lexer().peek_char() {
                 Ok((_, ch)) => if !ch.is_ascii_whitespace() && ch != '<' && ch != '>' && ch != '"'
                     && ch != '\''
                 {
                     id.push(ch);
-                    self.lexer.consume_char()?;
+                    self.lexer().consume_char()?;
                 } else {
                     break;
                 },
@@ -157,77 +73,13 @@ impl HtmlParser {
         }
     }
 
-    // Returned position is the start of the first quote char. String returned
-    // in Token::Str enum does not include quotes.
-    fn parse_string(&mut self) -> Result<Token> {
-        let _ = self.lexer.consume_whitespace()?;
-
-        let mut st: Vec<char> = vec![];
-        let (str_start_pos, quote) = match self.lexer.peek_char() {
-            Ok((pos, ch)) => if ch != '\'' && ch != '"' {
-                return Err(Error::Unexpected(pos, "expected quote".to_string()));
-            } else {
-                self.lexer.consume_char()?
-            },
-            Err(err) => return Err(err),
-        };
-        loop {
-            match self.lexer.peek_char() {
-                Ok((pos, ch)) => if ch == '\n' {
-                    return Err(Error::Unexpected(
-                        pos,
-                        "unexpected newline in string".to_string(),
-                    ));
-                } else if ch == quote {
-                    break;
-                } else {
-                    st.push(self.lexer.consume_char()?.1);
-                },
-                Err(_) => break,
-            }
-        }
-
-        if self.lexer.eof() {
-            Err(Error::Unexpected(
-                self.pos(),
-                "unexpected EOF when parsing string".to_string(),
-            ))
-        } else {
-            // end of string
-            self.lexer.consume_char()?;
-            Ok(Token::Str(str_start_pos, st.into_iter().collect()))
-        }
-    }
-
-    fn try<T>(&mut self, parser: ParserFn<T>) -> Result<T> {
-        let start_pos = self.pos();
-        match parser(self) {
-            ok @ Ok(_) => ok,
-            Err(err) => {
-                self.set_pos(start_pos);
-                Err(err)
-            }
-        }
-    }
-
-    fn try_parsers<T>(&mut self, parsers: &[ParserFn<T>], err_msg: &str) -> Result<T> {
-        if parsers.is_empty() {
-            return Err(Error::Unexpected(self.pos(), err_msg.to_string()));
-        }
-        let parser = parsers[0];
-        match self.try(parser) {
-            ok @ Ok(_) => ok,
-            Err(_) => self.try_parsers(&parsers[1..], err_msg),
-        }
-    }
-
     fn parse_tag_attributes(&mut self) -> Result<Vec<(Token, Option<Token>)>> {
         // roll back to next_start_pos if we parse an incomplete pair
         let mut next_start_pos = self.pos();
         let mut attributes: Vec<(Token, Option<Token>)> = vec![];
         loop {
             match self.parse_attr_identifier() {
-                Ok(id) => match self.lexer.try_parse_one_char('=') {
+                Ok(id) => match self.lexer().try_parse_one_char('=') {
                     Ok(_) => {
                         let parsers: Vec<ParserFn<Token>> =
                             vec![Self::parse_string, Self::parse_value];
@@ -257,14 +109,14 @@ impl HtmlParser {
     }
 
     fn parse_doctype(&mut self) -> Result<()> {
-        match self.lexer.parse_chars("<!DOCTYPE html>") {
+        match self.lexer().parse_chars("<!DOCTYPE html>") {
             Ok(_) => Ok(()),
             Err(err) => Err(err),
         }
     }
 
     fn parse_opening_tag(&mut self) -> Result<DomNode> {
-        let tag_start_pos = self.lexer.try_parse_one_char('<')?;
+        let tag_start_pos = self.lexer().try_parse_one_char('<')?;
         let tag_id = match self.parse_elem_identifier_strict() {
             Ok(tag_id) => tag_id,
             Err(err) => {
@@ -288,9 +140,9 @@ impl HtmlParser {
         };
         if elem_type.is_void_elem() {
             let attrs = self.parse_tag_attributes()?;
-            match self.lexer.try_parse_chars("/>") {
+            match self.lexer().try_parse_chars("/>") {
                 Ok(_) => (),
-                Err(_) => match self.lexer.try_parse_chars(">") {
+                Err(_) => match self.lexer().try_parse_chars(">") {
                     Ok(_) => (),
                     Err(_) => {
                         return Err(Error::Unexpected(
@@ -303,7 +155,7 @@ impl HtmlParser {
             Ok(DomNode::new(tag_start_pos, elem_type, attrs, vec![]))
         } else {
             let attrs = self.parse_tag_attributes()?;
-            match self.lexer.try_parse_one_char('>') {
+            match self.lexer().try_parse_one_char('>') {
                 Ok(_) => (),
                 Err(_) => {
                     return Err(Error::Unexpected(
@@ -317,8 +169,8 @@ impl HtmlParser {
     }
 
     fn parse_closing_tag(&mut self, opening_tag: DomNode) -> Result<DomNode> {
-        let tag_start_pos = self.lexer.try_parse_one_char('<')?;
-        let _ = self.lexer.try_parse_one_char_strict('/')?;
+        let tag_start_pos = self.lexer().try_parse_one_char('<')?;
+        let _ = self.lexer().try_parse_one_char_strict('/')?;
         let tag_id = self.parse_elem_identifier_strict()?;
         let elem_type = match tag_id {
             Token::ElemIdentifier(tag_id_pos, tag_id_str) => {
@@ -344,7 +196,7 @@ impl HtmlParser {
                 ),
             ));
         }
-        let _ = self.lexer.try_parse_one_char('>')?;
+        let _ = self.lexer().try_parse_one_char('>')?;
         Ok(opening_tag)
     }
 
@@ -352,9 +204,9 @@ impl HtmlParser {
         let start_pos = self.pos();
         let mut text: Vec<char> = vec![];
         loop {
-            match self.lexer.peek_char() {
+            match self.lexer().peek_char() {
                 Ok((_, ch)) => if ch != '<' {
-                    let (_, ch) = self.lexer.consume_char()?;
+                    let (_, ch) = self.lexer().consume_char()?;
                     text.push(ch);
                 } else {
                     break;
@@ -384,7 +236,7 @@ impl HtmlParser {
             return Ok(node);
         }
         loop {
-            match self.lexer.consume_whitespace() {
+            match self.lexer().consume_whitespace() {
                 Ok(_) => (),
                 Err(Error::Eof(_)) => {
                     return Err(Error::Unexpected(
@@ -394,13 +246,13 @@ impl HtmlParser {
                 }
                 Err(e) => return Err(e),
             };
-            if self.lexer.eof() {
+            if self.lexer().eof() {
                 return Err(Error::Unexpected(
                     node.pos,
                     format!("unclosed element: {:?}", node),
                 ));
             }
-            match self.lexer.peek_chars(2) {
+            match self.lexer().peek_chars(2) {
                 Ok((_, chars)) => {
                     if chars == "</" {
                         match self.parse_closing_tag(node.clone()) {
@@ -447,6 +299,16 @@ impl HtmlParser {
         let _ = parser.try(HtmlParser::parse_doctype);
         let node = parser.parse_node()?;
         Ok(node)
+    }
+}
+
+impl Parser<Error> for HtmlParser {
+    fn lexer(&mut self) -> &mut Lexer {
+        &mut self.lexer
+    }
+
+    fn lexer_immut(&self) -> &Lexer {
+        &self.lexer
     }
 }
 
