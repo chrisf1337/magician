@@ -1,4 +1,5 @@
-use error::{Error, Pos, Result};
+use common::Pos;
+use error::{Error, Result};
 
 pub struct Lexer {
     input: Vec<char>,

@@ -1,6 +1,5 @@
+use common::Pos;
 use std::result;
-
-pub type Pos = (usize, usize, usize); // index, row, col
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Error {

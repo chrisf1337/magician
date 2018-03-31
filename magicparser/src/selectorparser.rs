@@ -1,5 +1,5 @@
-use common::ElemType;
-use error::{Error, Pos};
+use common::{ElemType, Pos, Token};
+use error::Error;
 use lexer::Lexer;
 use std::convert::From;
 use std::result;
@@ -34,16 +34,6 @@ impl From<Error> for SelectorParserError {
 
 type Result<T> = result::Result<T, SelectorParserError>;
 type ParserFn<T> = fn(&mut SelectorParser) -> Result<T>;
-
-#[derive(Debug, Eq, PartialEq)]
-pub enum Token {
-    // ascii string starting with a letter and may contain letters or numbers
-    ElemIdentifier(Pos, String),
-    // ascii string starting with a letter and may contain letters, numbers, _, or -
-    AttrIdentifier(Pos, String),
-    // "..." or '...' (no support for quoted entities)
-    Str(Pos, String),
-}
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum AttrSelectorOp {
@@ -462,14 +452,12 @@ impl SelectorParser {
 
     fn parse_pcs_lang_args(&mut self) -> Result<Token> {
         self.lexer.parse_chars_strict("(")?;
-        let parsers: Vec<ParserFn<Token>> = vec![Self::parse_elem_identifier, Self::parse_string];
-        let token = self.try_parsers(&parsers, "")?;
+        let token = self.parse_elem_identifier()?;
         self.lexer.parse_chars(")")?;
         Ok(token)
     }
 
-    fn parse_pcs_not_args(&mut self) -> Result<Vec<Selector>> {
-        self.lexer.parse_chars_strict("(")?;
+    fn parse_selector_list(&mut self) -> Result<Vec<Selector>> {
         let mut selectors = vec![];
         // parse_selector_seq() is strict, so consume whitespace first
         self.lexer.consume_whitespace()?;
@@ -485,12 +473,18 @@ impl SelectorParser {
                 Err(err) => return Err(err),
             }
         }
+        Ok(selectors)
+    }
+
+    fn parse_pcs_not_args(&mut self) -> Result<Vec<Selector>> {
+        self.lexer.parse_chars_strict("(")?;
+        let selectors = self.parse_selector_list()?;
         self.lexer.parse_chars(")")?;
         Ok(selectors)
     }
 
     fn parse_pseudo_class_selector(&mut self) -> Result<PseudoClassSelector> {
-        match self.lexer.parse_chars_strict("::") {
+        match self.lexer.parse_chars_strict(":") {
             Ok(pos) => {
                 let sel_type = match self.parse_elem_identifier_strict()? {
                     Token::ElemIdentifier(_, sel_name) => match sel_name.as_ref() {
@@ -803,66 +797,52 @@ mod tests {
 
     #[test]
     fn test_parse_pcs_lang1() {
-        let mut parser = SelectorParser::new("::lang( en )");
+        let mut parser = SelectorParser::new(":lang( en )");
         let res = parser.parse_pseudo_class_selector();
         assert_eq!(
             res,
             Ok(PseudoClassSelector::new(
                 (0, 1, 1),
-                PseudoClassSelectorType::Lang(Token::ElemIdentifier((8, 1, 9), "en".to_string()))
+                PseudoClassSelectorType::Lang(Token::ElemIdentifier((7, 1, 8), "en".to_string()))
             ))
         );
-        assert_eq!(parser.pos(), (12, 1, 13));
+        assert_eq!(parser.pos(), (11, 1, 12));
     }
 
     #[test]
     fn test_parse_pcs_lang2() {
-        let mut parser = SelectorParser::new("::lang(zh-Hans)");
+        let mut parser = SelectorParser::new(":lang(zh-Hans)");
         let res = parser.parse_pseudo_class_selector();
         assert_eq!(
             res,
             Ok(PseudoClassSelector::new(
                 (0, 1, 1),
                 PseudoClassSelectorType::Lang(Token::ElemIdentifier(
-                    (7, 1, 8),
+                    (6, 1, 7),
                     "zh-Hans".to_string()
                 ))
             ))
         );
-        assert_eq!(parser.pos(), (15, 1, 16));
-    }
-
-    #[test]
-    fn test_parse_pcs_lang3() {
-        let mut parser = SelectorParser::new("::lang(\"en\")");
-        let res = parser.parse_pseudo_class_selector();
-        assert_eq!(
-            res,
-            Ok(PseudoClassSelector::new(
-                (0, 1, 1),
-                PseudoClassSelectorType::Lang(Token::Str((7, 1, 8), "en".to_string()))
-            ))
-        );
-        assert_eq!(parser.pos(), (12, 1, 13));
+        assert_eq!(parser.pos(), (14, 1, 15));
     }
 
     #[test]
     fn test_parse_pcs_lang_fail() {
-        let mut parser = SelectorParser::new(":lang(en)");
+        let mut parser = SelectorParser::new(":lang(\"en\")");
         let res = parser.parse_pseudo_class_selector();
         assert_eq!(
             res,
             Err(SelectorParserError::Unexpected(
-                (1, 1, 2),
-                "expected :, got l".to_string()
+                (6, 1, 7),
+                "expected element identifier".to_string()
             ))
         );
-        assert_eq!(parser.pos(), (1, 1, 2));
+        assert_eq!(parser.pos(), (6, 1, 7));
     }
 
     #[test]
     fn test_parse_pcs_not1() {
-        let mut parser = SelectorParser::new("::not( a )");
+        let mut parser = SelectorParser::new(":not( a )");
         let res = parser.parse_pseudo_class_selector();
         assert_eq!(
             res,
@@ -870,65 +850,65 @@ mod tests {
                 (0, 1, 1),
                 PseudoClassSelectorType::Not(vec![
                     Selector::Simple(SimpleSelector::new(
-                        (7, 1, 8),
+                        (6, 1, 7),
                         Some(ElemType::A),
                         None,
                         vec![],
                         false,
                     )),
                 ])
-            ))
-        );
-        assert_eq!(parser.pos(), (10, 1, 11));
-    }
-
-    #[test]
-    fn test_parse_pcs_not2() {
-        let mut parser = SelectorParser::new("::not( a , [href] )");
-        let res = parser.parse_pseudo_class_selector();
-        assert_eq!(
-            res,
-            Ok(PseudoClassSelector::new(
-                (0, 1, 1),
-                PseudoClassSelectorType::Not(vec![
-                    Selector::Simple(SimpleSelector::new(
-                        (7, 1, 8),
-                        Some(ElemType::A),
-                        None,
-                        vec![],
-                        false,
-                    )),
-                    Selector::Attr(AttrSelector::new(
-                        (11, 1, 12),
-                        Token::AttrIdentifier((12, 1, 13), "href".to_string()),
-                        None,
-                        false,
-                    )),
-                ])
-            ))
-        );
-        assert_eq!(parser.pos(), (19, 1, 20));
-    }
-
-    #[test]
-    fn test_parse_pcs_not_fail1() {
-        let mut parser = SelectorParser::new("::not( a [href] )");
-        let res = parser.parse_pseudo_class_selector();
-        assert_eq!(
-            res,
-            Err(SelectorParserError::Unexpected(
-                (9, 1, 10),
-                "expected ), got [".to_string()
             ))
         );
         assert_eq!(parser.pos(), (9, 1, 10));
     }
 
     #[test]
-    fn test_parse_pcs_not_fail2() {
-        let mut parser = SelectorParser::new("::not( a , [href]");
+    fn test_parse_pcs_not2() {
+        let mut parser = SelectorParser::new(":not( a , [href] )");
         let res = parser.parse_pseudo_class_selector();
-        assert_eq!(res, Err(SelectorParserError::Eof((17, 1, 18))));
-        assert_eq!(parser.pos(), (17, 1, 18));
+        assert_eq!(
+            res,
+            Ok(PseudoClassSelector::new(
+                (0, 1, 1),
+                PseudoClassSelectorType::Not(vec![
+                    Selector::Simple(SimpleSelector::new(
+                        (6, 1, 7),
+                        Some(ElemType::A),
+                        None,
+                        vec![],
+                        false,
+                    )),
+                    Selector::Attr(AttrSelector::new(
+                        (10, 1, 11),
+                        Token::AttrIdentifier((11, 1, 12), "href".to_string()),
+                        None,
+                        false,
+                    )),
+                ])
+            ))
+        );
+        assert_eq!(parser.pos(), (18, 1, 19));
+    }
+
+    #[test]
+    fn test_parse_pcs_not_fail1() {
+        let mut parser = SelectorParser::new(":not( a [href] )");
+        let res = parser.parse_pseudo_class_selector();
+        assert_eq!(
+            res,
+            Err(SelectorParserError::Unexpected(
+                (8, 1, 9),
+                "expected ), got [".to_string()
+            ))
+        );
+        assert_eq!(parser.pos(), (8, 1, 9));
+    }
+
+    #[test]
+    fn test_parse_pcs_not_fail2() {
+        let mut parser = SelectorParser::new(":not( a , [href]");
+        let res = parser.parse_pseudo_class_selector();
+        assert_eq!(res, Err(SelectorParserError::Eof((16, 1, 17))));
+        assert_eq!(parser.pos(), (16, 1, 17));
     }
 }
