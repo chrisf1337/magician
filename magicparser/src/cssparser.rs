@@ -272,7 +272,7 @@ mod tests {
             res,
             Err(Error::Unexpected(
                 (16, 1, 17),
-                "expected {, got ;".to_string()
+                "expected '{', got ';'".to_string()
             ))
         );
         assert_eq!(parser.pos(), (16, 1, 17));

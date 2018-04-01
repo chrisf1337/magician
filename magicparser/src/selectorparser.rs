@@ -82,7 +82,7 @@ pub struct AttrSelector {
 }
 
 impl AttrSelector {
-    fn new(
+    pub fn new(
         pos: Pos,
         attr: Token,
         op_val: Option<(AttrSelectorOp, Token)>,
@@ -98,13 +98,13 @@ impl AttrSelector {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-enum NthExprOp {
+pub enum NthExprOp {
     Add(Pos),
     Sub(Pos),
 }
 
 #[derive(Debug, Eq, PartialEq)]
-enum NthExpr {
+pub enum NthExpr {
     A(Pos, Token),
     AnPlusB(Pos, Option<Token>, Option<NthExprOp>, Option<Token>),
     Even(Pos),
@@ -112,21 +112,21 @@ enum NthExpr {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-enum PseudoClassSelectorType {
+pub enum PseudoClassSelectorType {
     Hover,
     // experimental: Dir,
     // experimental: Host,
     // experimental: HostContext,
     Lang(Token),
     Not(Vec<Selector>),
-    NthChild,
-    NthLastChild,
-    NthLastOfType,
-    NthOfType,
+    NthChild(NthExpr),
+    NthLastChild(NthExpr),
+    NthLastOfType(NthExpr),
+    NthOfType(NthExpr),
 }
 
 #[derive(Debug, Eq, PartialEq)]
-struct PseudoClassSelector {
+pub struct PseudoClassSelector {
     pub pos: Pos,
     pub sel_type: PseudoClassSelectorType,
 }
@@ -142,6 +142,7 @@ pub enum Selector {
     Seq(Vec<Selector>),
     Simple(SimpleSelector),
     Attr(AttrSelector),
+    PseudoClass(PseudoClassSelector),
 }
 
 pub struct SelectorParser {
@@ -195,7 +196,7 @@ impl SelectorParser {
                     found = true;
                 }
                 Ok((_, _)) => match self.parse_elem_identifier_strict() {
-                    Ok(Token::ElemIdentifier(pos, elem_name)) => {
+                    Ok(Token::ElemIdentifier(_, elem_name)) => {
                         elem_type = ElemType::from_str(&elem_name);
                         found = true;
                     }
@@ -240,7 +241,7 @@ impl SelectorParser {
         }
     }
 
-    // Also strict (must start with )
+    // Also strict (must start with [)
     fn parse_attr_selector(&mut self) -> Result<Selector> {
         let start_pos = self.pos();
         self.lexer.parse_chars_strict("[")?;
@@ -280,7 +281,8 @@ impl SelectorParser {
             Ok(sel) => selectors.push(sel),
             Err(..) => (),
         }
-        let parsers: Vec<ParserFn<Selector>> = vec![Self::parse_attr_selector];
+        let parsers: Vec<ParserFn<Selector>> =
+            vec![Self::parse_attr_selector, Self::parse_pseudo_class_selector];
         loop {
             let selector = match self.try_parsers(&parsers, "") {
                 Ok(sel) => sel,
@@ -413,7 +415,15 @@ impl SelectorParser {
         }
     }
 
-    fn parse_pseudo_class_selector(&mut self) -> Result<PseudoClassSelector> {
+    fn parse_nth_pcs_args(&mut self) -> Result<NthExpr> {
+        self.lexer.parse_chars_strict("(")?;
+        let expr = self.parse_nth_expr()?;
+        self.lexer.parse_chars(")")?;
+        Ok(expr)
+    }
+
+    // strict
+    fn parse_pseudo_class_selector(&mut self) -> Result<Selector> {
         match self.lexer.parse_chars_strict(":") {
             Ok(pos) => {
                 let sel_type = match self.parse_elem_identifier_strict()? {
@@ -421,10 +431,18 @@ impl SelectorParser {
                         "hover" => PseudoClassSelectorType::Hover,
                         "lang" => PseudoClassSelectorType::Lang(self.parse_pcs_lang_args()?),
                         "not" => PseudoClassSelectorType::Not(self.parse_pcs_not_args()?),
-                        "nth-child" => PseudoClassSelectorType::NthChild,
-                        "nth-last-child" => PseudoClassSelectorType::NthLastChild,
-                        "nth-last-of-type" => PseudoClassSelectorType::NthLastOfType,
-                        "nth-of-type" => PseudoClassSelectorType::NthOfType,
+                        "nth-child" => {
+                            PseudoClassSelectorType::NthChild(self.parse_nth_pcs_args()?)
+                        }
+                        "nth-last-child" => {
+                            PseudoClassSelectorType::NthLastChild(self.parse_nth_pcs_args()?)
+                        }
+                        "nth-last-of-type" => {
+                            PseudoClassSelectorType::NthLastOfType(self.parse_nth_pcs_args()?)
+                        }
+                        "nth-of-type" => {
+                            PseudoClassSelectorType::NthOfType(self.parse_nth_pcs_args()?)
+                        }
                         _ => {
                             return Err(SelectorParserError::Unexpected(
                                 pos,
@@ -434,7 +452,10 @@ impl SelectorParser {
                     },
                     _ => unreachable!(),
                 };
-                Ok(PseudoClassSelector::new(pos, sel_type))
+                Ok(Selector::PseudoClass(PseudoClassSelector::new(
+                    pos,
+                    sel_type,
+                )))
             }
             Err(err) => return Err(SelectorParserError::from(err)),
         }
@@ -638,7 +659,7 @@ mod tests {
             res,
             Err(SelectorParserError::Unexpected(
                 (7, 1, 8),
-                "expected ], got /".to_string()
+                "expected ']', got '/'".to_string()
             ))
         );
         assert_eq!(parser.pos(), (7, 1, 8));
@@ -720,6 +741,28 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_selector_seq3() {
+        let mut parser = SelectorParser::new("[href I]:nth-child(even)");
+        let res = parser.parse_selector_seq();
+        assert_eq!(
+            res,
+            Ok(Selector::Seq(vec![
+                Selector::Attr(AttrSelector::new(
+                    (0, 1, 1),
+                    Token::AttrIdentifier((1, 1, 2), "href".to_string()),
+                    None,
+                    true,
+                )),
+                Selector::PseudoClass(PseudoClassSelector::new(
+                    (8, 1, 9),
+                    PseudoClassSelectorType::NthChild(NthExpr::Even((19, 1, 20))),
+                )),
+            ]))
+        );
+        assert_eq!(parser.pos(), (24, 1, 25));
+    }
+
+    #[test]
     fn test_parse_selector_seq_single_selector() {
         let mut parser = SelectorParser::new("[href]");
         let res = parser.parse_selector_seq();
@@ -741,10 +784,10 @@ mod tests {
         let res = parser.parse_pseudo_class_selector();
         assert_eq!(
             res,
-            Ok(PseudoClassSelector::new(
+            Ok(Selector::PseudoClass(PseudoClassSelector::new(
                 (0, 1, 1),
                 PseudoClassSelectorType::Lang(Token::ElemIdentifier((7, 1, 8), "en".to_string()))
-            ))
+            )))
         );
         assert_eq!(parser.pos(), (11, 1, 12));
     }
@@ -755,13 +798,13 @@ mod tests {
         let res = parser.parse_pseudo_class_selector();
         assert_eq!(
             res,
-            Ok(PseudoClassSelector::new(
+            Ok(Selector::PseudoClass(PseudoClassSelector::new(
                 (0, 1, 1),
                 PseudoClassSelectorType::Lang(Token::ElemIdentifier(
                     (6, 1, 7),
                     "zh-Hans".to_string()
                 ))
-            ))
+            )))
         );
         assert_eq!(parser.pos(), (14, 1, 15));
     }
@@ -786,7 +829,7 @@ mod tests {
         let res = parser.parse_pseudo_class_selector();
         assert_eq!(
             res,
-            Ok(PseudoClassSelector::new(
+            Ok(Selector::PseudoClass(PseudoClassSelector::new(
                 (0, 1, 1),
                 PseudoClassSelectorType::Not(vec![
                     Selector::Simple(SimpleSelector::new(
@@ -797,7 +840,7 @@ mod tests {
                         false,
                     )),
                 ])
-            ))
+            )))
         );
         assert_eq!(parser.pos(), (9, 1, 10));
     }
@@ -808,7 +851,7 @@ mod tests {
         let res = parser.parse_pseudo_class_selector();
         assert_eq!(
             res,
-            Ok(PseudoClassSelector::new(
+            Ok(Selector::PseudoClass(PseudoClassSelector::new(
                 (0, 1, 1),
                 PseudoClassSelectorType::Not(vec![
                     Selector::Simple(SimpleSelector::new(
@@ -825,7 +868,7 @@ mod tests {
                         false,
                     )),
                 ])
-            ))
+            )))
         );
         assert_eq!(parser.pos(), (18, 1, 19));
     }
@@ -838,7 +881,7 @@ mod tests {
             res,
             Err(SelectorParserError::Unexpected(
                 (8, 1, 9),
-                "expected ), got [".to_string()
+                "expected ')', got '['".to_string()
             ))
         );
         assert_eq!(parser.pos(), (8, 1, 9));
@@ -1066,5 +1109,71 @@ mod tests {
             ))
         );
         assert_eq!(parser.pos(), (4, 1, 5));
+    }
+
+    #[test]
+    fn test_parse_pcs_nth_child1() {
+        let mut parser = SelectorParser::new(":nth-child(even)");
+        let res = parser.parse_pseudo_class_selector();
+        assert_eq!(
+            res,
+            Ok(Selector::PseudoClass(PseudoClassSelector::new(
+                (0, 1, 1),
+                PseudoClassSelectorType::NthChild(NthExpr::Even((11, 1, 12)))
+            )))
+        );
+        assert_eq!(parser.pos(), (16, 1, 17));
+    }
+
+    #[test]
+    fn test_parse_pcs_nth_child2() {
+        let mut parser = SelectorParser::new(":nth-child( 2n )");
+        let res = parser.parse_pseudo_class_selector();
+        assert_eq!(
+            res,
+            Ok(Selector::PseudoClass(PseudoClassSelector::new(
+                (0, 1, 1),
+                PseudoClassSelectorType::NthChild(NthExpr::AnPlusB(
+                    (12, 1, 13),
+                    Some(Token::Number((12, 1, 13), 2)),
+                    None,
+                    None
+                ))
+            )))
+        );
+        assert_eq!(parser.pos(), (16, 1, 17));
+    }
+
+    #[test]
+    fn test_parse_pcs_nth_child3() {
+        let mut parser = SelectorParser::new(":nth-child(2n-3)");
+        let res = parser.parse_pseudo_class_selector();
+        assert_eq!(
+            res,
+            Ok(Selector::PseudoClass(PseudoClassSelector::new(
+                (0, 1, 1),
+                PseudoClassSelectorType::NthChild(NthExpr::AnPlusB(
+                    (11, 1, 12),
+                    Some(Token::Number((11, 1, 12), 2)),
+                    Some(NthExprOp::Sub((13, 1, 14))),
+                    Some(Token::Number((14, 1, 15), 3)),
+                ))
+            )))
+        );
+        assert_eq!(parser.pos(), (16, 1, 17));
+    }
+
+    #[test]
+    fn test_parse_pcs_nth_child_fail1() {
+        let mut parser = SelectorParser::new(":nth-child(2 n-3)");
+        let res = parser.parse_pseudo_class_selector();
+        assert_eq!(
+            res,
+            Err(SelectorParserError::Unexpected(
+                (13, 1, 14),
+                "expected ')', got 'n'".to_string()
+            ))
+        );
+        assert_eq!(parser.pos(), (13, 1, 14));
     }
 }

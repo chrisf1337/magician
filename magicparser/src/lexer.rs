@@ -225,7 +225,7 @@ impl Lexer {
         } else {
             Err(Error::Unexpected(
                 pos,
-                format!("expected {}, got {}", ch, self.input[self.index]).to_string(),
+                format!("expected '{}', got '{}'", ch, self.input[self.index]).to_string(),
             ))
         }
     }
