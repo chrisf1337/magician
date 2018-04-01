@@ -47,7 +47,7 @@ pub enum AttrSelectorOp {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-struct SimpleSelector {
+pub struct SimpleSelector {
     pub pos: Pos,
     pub elem_type: Option<ElemType>,
     pub id: Option<Token>,   // AttrIdentifier or Str
@@ -74,7 +74,7 @@ impl SimpleSelector {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-struct AttrSelector {
+pub struct AttrSelector {
     pub pos: Pos,
     pub attr: Token,
     pub op_val: Option<(AttrSelectorOp, Token)>,
@@ -95,6 +95,20 @@ impl AttrSelector {
             case_insensitive,
         }
     }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum NthExprOp {
+    Add(Pos),
+    Sub(Pos),
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum NthExpr {
+    A(Pos, Token),
+    AnPlusB(Pos, Option<Token>, Option<NthExprOp>, Option<Token>),
+    Even(Pos),
+    Odd(Pos),
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -318,6 +332,85 @@ impl SelectorParser {
         let selectors = self.parse_selector_list()?;
         self.lexer.parse_chars(")")?;
         Ok(selectors)
+    }
+
+    fn parse_nth_expr(&mut self) -> Result<NthExpr> {
+        self.lexer().consume_whitespace()?;
+        let start_pos = self.pos();
+        match self.lexer().peek_char() {
+            Ok((_, ch)) => if ch == '+' || ch == '-' || ch == 'n' || ch.is_ascii_digit() {
+                let mut neg_sign = false;
+                let a = match self.parse_number_strict() {
+                    Ok(num) => Some(num),
+                    Err(SelectorParserError::Unexpected(..)) => if ch == '-' {
+                        neg_sign = true;
+                        Some(Token::Number(start_pos, -1))
+                    } else {
+                        None
+                    },
+                    Err(err) => return Err(SelectorParserError::from(err)),
+                };
+                let n = if a.is_some() {
+                    match self.lexer.try_parse_chars_strict("n") {
+                        Ok(..) => true,
+                        Err(..) => false,
+                    }
+                } else {
+                    match self.lexer.try_parse_chars("n") {
+                        Ok(..) => true,
+                        Err(..) => false,
+                    }
+                };
+                let op = match self.lexer().parse_chars_list(vec!["+", "-"]) {
+                    Ok((pos, st)) => match st.as_ref() {
+                        "+" => Some(NthExprOp::Add(pos)),
+                        "-" => Some(NthExprOp::Sub(pos)),
+                        _ => unreachable!(),
+                    },
+                    _ => None,
+                };
+                let b = match op {
+                    Some(_) => Some(self.parse_number()?),
+                    None => None,
+                };
+                if n {
+                    Ok(NthExpr::AnPlusB(start_pos, a, op, b))
+                } else {
+                    match a {
+                        Some(a) => {
+                            if neg_sign || op.is_some() || b.is_some() {
+                                // reject "- + 3", "-1 + 3", "-1 +", etc.
+                                Err(SelectorParserError::Unexpected(
+                                    start_pos,
+                                    "expected an + b expression, even, or odd".to_string(),
+                                ))
+                            } else {
+                                Ok(NthExpr::A(start_pos, a))
+                            }
+                        }
+                        None => Err(SelectorParserError::Unexpected(
+                            start_pos,
+                            "expected an + b expression, even, or odd".to_string(),
+                        )),
+                    }
+                }
+            } else if ch == 'e' || ch == 'o' {
+                match self.lexer().parse_chars_list_strict(vec!["even", "odd"]) {
+                    Ok((_, st)) => match st.as_ref() {
+                        "even" => Ok(NthExpr::Even(start_pos)),
+                        "odd" => Ok(NthExpr::Odd(start_pos)),
+                        _ => unreachable!(),
+                    },
+                    Err(err) => Err(SelectorParserError::from(err)),
+                }
+            } else {
+                Err(SelectorParserError::Unexpected(
+                    start_pos,
+                    "expected an + b expression, even, or odd".to_string(),
+                ))
+            },
+            Err(err) => Err(SelectorParserError::from(err)),
+        }
     }
 
     fn parse_pseudo_class_selector(&mut self) -> Result<PseudoClassSelector> {
@@ -757,5 +850,221 @@ mod tests {
         let res = parser.parse_pseudo_class_selector();
         assert_eq!(res, Err(SelectorParserError::Eof((16, 1, 17))));
         assert_eq!(parser.pos(), (16, 1, 17));
+    }
+
+    #[test]
+    fn test_parse_nth_expr1() {
+        let mut parser = SelectorParser::new(" 12");
+        let res = parser.parse_nth_expr();
+        assert_eq!(res, Ok(NthExpr::A((1, 1, 2), Token::Number((1, 1, 2), 12))));
+        assert_eq!(parser.pos(), (3, 1, 4));
+    }
+
+    #[test]
+    fn test_parse_nth_expr2() {
+        let mut parser = SelectorParser::new(" 12n");
+        let res = parser.parse_nth_expr();
+        assert_eq!(
+            res,
+            Ok(NthExpr::AnPlusB(
+                (1, 1, 2),
+                Some(Token::Number((1, 1, 2), 12)),
+                None,
+                None
+            ))
+        );
+        assert_eq!(parser.pos(), (4, 1, 5));
+    }
+
+    #[test]
+    fn test_parse_nth_expr3() {
+        let mut parser = SelectorParser::new(" 12n-3");
+        let res = parser.parse_nth_expr();
+        assert_eq!(
+            res,
+            Ok(NthExpr::AnPlusB(
+                (1, 1, 2),
+                Some(Token::Number((1, 1, 2), 12)),
+                Some(NthExprOp::Sub((4, 1, 5))),
+                Some(Token::Number((5, 1, 6), 3))
+            ))
+        );
+        assert_eq!(parser.pos(), (6, 1, 7));
+    }
+
+    #[test]
+    fn test_parse_nth_expr4() {
+        let mut parser = SelectorParser::new("12n + 3");
+        let res = parser.parse_nth_expr();
+        assert_eq!(
+            res,
+            Ok(NthExpr::AnPlusB(
+                (0, 1, 1),
+                Some(Token::Number((0, 1, 1), 12)),
+                Some(NthExprOp::Add((4, 1, 5))),
+                Some(Token::Number((6, 1, 7), 3))
+            ))
+        );
+        assert_eq!(parser.pos(), (7, 1, 8));
+    }
+
+    #[test]
+    fn test_parse_nth_expr_even() {
+        let mut parser = SelectorParser::new("even");
+        let res = parser.parse_nth_expr();
+        assert_eq!(res, Ok(NthExpr::Even((0, 1, 1))));
+        assert_eq!(parser.pos(), (4, 1, 5));
+    }
+
+    #[test]
+    fn test_parse_nth_expr_odd() {
+        let mut parser = SelectorParser::new("odd");
+        let res = parser.parse_nth_expr();
+        assert_eq!(res, Ok(NthExpr::Odd((0, 1, 1))));
+        assert_eq!(parser.pos(), (3, 1, 4));
+    }
+
+    #[test]
+    fn test_parse_nth_expr5() {
+        let mut parser = SelectorParser::new("n");
+        let res = parser.parse_nth_expr();
+        assert_eq!(res, Ok(NthExpr::AnPlusB((0, 1, 1), None, None, None)));
+        assert_eq!(parser.pos(), (1, 1, 2));
+    }
+
+    #[test]
+    fn test_parse_nth_expr6() {
+        let mut parser = SelectorParser::new("-n");
+        let res = parser.parse_nth_expr();
+        assert_eq!(
+            res,
+            Ok(NthExpr::AnPlusB(
+                (0, 1, 1),
+                Some(Token::Number((0, 1, 1), -1)),
+                None,
+                None
+            ))
+        );
+        assert_eq!(parser.pos(), (2, 1, 3));
+    }
+
+    #[test]
+    fn test_parse_nth_expr7() {
+        let mut parser = SelectorParser::new("-1n");
+        let res = parser.parse_nth_expr();
+        assert_eq!(
+            res,
+            Ok(NthExpr::AnPlusB(
+                (0, 1, 1),
+                Some(Token::Number((0, 1, 1), -1)),
+                None,
+                None
+            ))
+        );
+        assert_eq!(parser.pos(), (3, 1, 4));
+    }
+
+    #[test]
+    fn test_parse_nth_expr8() {
+        let mut parser = SelectorParser::new("-1n -3");
+        let res = parser.parse_nth_expr();
+        assert_eq!(
+            res,
+            Ok(NthExpr::AnPlusB(
+                (0, 1, 1),
+                Some(Token::Number((0, 1, 1), -1)),
+                Some(NthExprOp::Sub((4, 1, 5))),
+                Some(Token::Number((5, 1, 6), 3))
+            ))
+        );
+        assert_eq!(parser.pos(), (6, 1, 7));
+    }
+
+    #[test]
+    fn test_parse_nth_expr9() {
+        let mut parser = SelectorParser::new("-1");
+        let res = parser.parse_nth_expr();
+        assert_eq!(res, Ok(NthExpr::A((0, 1, 1), Token::Number((0, 1, 1), -1))));
+        assert_eq!(parser.pos(), (2, 1, 3));
+    }
+
+    #[test]
+    fn test_parse_nth_expr10() {
+        let mut parser = SelectorParser::new("+3");
+        let res = parser.parse_nth_expr();
+        assert_eq!(res, Ok(NthExpr::A((0, 1, 1), Token::Number((0, 1, 1), 3))));
+        assert_eq!(parser.pos(), (2, 1, 3));
+    }
+
+    #[test]
+    fn test_parse_nth_expr11() {
+        let mut parser = SelectorParser::new("-0n+1");
+        let res = parser.parse_nth_expr();
+        assert_eq!(
+            res,
+            Ok(NthExpr::AnPlusB(
+                (0, 1, 1),
+                Some(Token::Number((0, 1, 1), 0)),
+                Some(NthExprOp::Add((3, 1, 4))),
+                Some(Token::Number((4, 1, 5), 1))
+            ))
+        );
+        assert_eq!(parser.pos(), (5, 1, 6));
+    }
+
+    #[test]
+    fn test_parse_nth_expr_fail1() {
+        let mut parser = SelectorParser::new("- n");
+        let res = parser.parse_nth_expr();
+        assert_eq!(
+            res,
+            Err(SelectorParserError::Unexpected(
+                (0, 1, 1),
+                "expected an + b expression, even, or odd".to_string()
+            ))
+        );
+        assert_eq!(parser.pos(), (2, 1, 3));
+    }
+
+    #[test]
+    fn test_parse_nth_expr_fail2() {
+        let mut parser = SelectorParser::new("-1 -3");
+        let res = parser.parse_nth_expr();
+        assert_eq!(
+            res,
+            Err(SelectorParserError::Unexpected(
+                (0, 1, 1),
+                "expected an + b expression, even, or odd".to_string()
+            ))
+        );
+        assert_eq!(parser.pos(), (5, 1, 6));
+    }
+
+    #[test]
+    fn test_parse_nth_expr_fail3() {
+        let mut parser = SelectorParser::new("--3");
+        let res = parser.parse_nth_expr();
+        assert_eq!(
+            res,
+            Err(SelectorParserError::Unexpected(
+                (0, 1, 1),
+                "expected an + b expression, even, or odd".to_string()
+            ))
+        );
+        assert_eq!(parser.pos(), (3, 1, 4));
+    }
+
+    #[test]
+    fn test_parse_nth_expr_fail4() {
+        let mut parser = SelectorParser::new("- -3");
+        let res = parser.parse_nth_expr();
+        assert_eq!(
+            res,
+            Err(SelectorParserError::Unexpected(
+                (0, 1, 1),
+                "expected an + b expression, even, or odd".to_string()
+            ))
+        );
+        assert_eq!(parser.pos(), (4, 1, 5));
     }
 }

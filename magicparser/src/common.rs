@@ -10,6 +10,7 @@ pub enum Token {
     AttrIdentifier(Pos, String),
     // any string not containing whitespace, <, or >
     Value(Pos, String),
+    Number(Pos, isize),
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]

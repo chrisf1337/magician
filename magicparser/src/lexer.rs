@@ -230,37 +230,9 @@ impl Lexer {
         }
     }
 
-    pub fn parse_chars(&mut self, chars: &str) -> Result<Pos> {
-        if chars.is_empty() {
-            panic!("Cannot call parse_chars() with empty string");
-        }
-        let chars: Vec<char> = chars.chars().collect();
-        let pos = self.try_parse_one_char(chars[0])?;
-        for &c in chars.iter().skip(1) {
-            self.try_parse_one_char_strict(c)?;
-        }
-        Ok(pos)
-    }
-
-    pub fn try_parse_chars_list(&mut self, chars_list: Vec<&str>) -> Result<(Pos, String)> {
-        if chars_list.len() == 0 {
-            panic!("Cannot call parse_chars_list() with empty list");
-        }
-        for &chars in chars_list.iter() {
-            match self.try_parse_chars(chars) {
-                Ok(pos) => return Ok((pos, chars.to_string())),
-                Err(..) => (),
-            }
-        }
-        Err(Error::Unexpected(
-            self.pos(),
-            format!("parse_chars_list: expected {:?}", chars_list),
-        ))
-    }
-
     pub fn parse_chars_strict(&mut self, chars: &str) -> Result<Pos> {
         if chars.is_empty() {
-            panic!("Cannot call parse_chars() with empty string");
+            panic!("Cannot call parse_chars_strict() with empty string");
         }
         let chars: Vec<char> = chars.chars().collect();
         let pos = self.try_parse_one_char_strict(chars[0])?;
@@ -270,9 +242,57 @@ impl Lexer {
         Ok(pos)
     }
 
-    pub fn try_parse_chars(&mut self, chars: &str) -> Result<Pos> {
+    pub fn parse_chars(&mut self, chars: &str) -> Result<Pos> {
+        if chars.is_empty() {
+            panic!("Cannot call parse_chars() with empty string");
+        }
+        self.consume_whitespace()?;
+        self.parse_chars_strict(chars)
+    }
+
+    pub fn try_parse_chars_strict(&mut self, chars: &str) -> Result<Pos> {
         let start_pos = self.pos();
-        match self.parse_chars(chars) {
+        match self.parse_chars_strict(chars) {
+            ok @ Ok(_) => ok,
+            Err(err) => {
+                self.set_pos(start_pos);
+                Err(err)
+            }
+        }
+    }
+
+    pub fn try_parse_chars(&mut self, chars: &str) -> Result<Pos> {
+        self.consume_whitespace()?;
+        self.try_parse_chars_strict(chars)
+    }
+
+    pub fn parse_chars_list_strict(&mut self, chars_list: Vec<&str>) -> Result<(Pos, String)> {
+        if chars_list.len() == 0 {
+            panic!("Cannot call parse_chars_list_strict() with empty list");
+        }
+        for &chars in chars_list.iter() {
+            match self.try_parse_chars_strict(chars) {
+                Ok(pos) => return Ok((pos, chars.to_string())),
+                Err(..) => (),
+            }
+        }
+        Err(Error::Unexpected(
+            self.pos(),
+            format!("parse_chars_list(): expected {:?}", chars_list),
+        ))
+    }
+
+    pub fn parse_chars_list(&mut self, chars_list: Vec<&str>) -> Result<(Pos, String)> {
+        self.consume_whitespace()?;
+        self.parse_chars_list_strict(chars_list)
+    }
+
+    pub fn try_parse_chars_list(&mut self, chars_list: Vec<&str>) -> Result<(Pos, String)> {
+        if chars_list.len() == 0 {
+            panic!("Cannot call parse_chars_list() with empty list");
+        }
+        let start_pos = self.pos();
+        match self.parse_chars_list(chars_list) {
             ok @ Ok(_) => ok,
             Err(err) => {
                 self.set_pos(start_pos);
@@ -285,10 +305,6 @@ impl Lexer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
-    use std::fs::File;
-    use std::io::prelude::*;
-    use std::path::Path;
 
     #[test]
     fn test_get_chars1() {
@@ -489,8 +505,8 @@ mod tests {
         assert_eq!(
             res,
             Err(Error::Unexpected(
-                (0, 1, 1),
-                "parse_chars_list: expected [\"123\", \"bc\"]".to_string()
+                (1, 1, 2),
+                "parse_chars_list(): expected [\"123\", \"bc\"]".to_string()
             ))
         );
         assert_eq!(lexer.pos(), (0, 1, 1));
