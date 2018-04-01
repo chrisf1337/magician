@@ -138,11 +138,23 @@ impl PseudoClassSelector {
 }
 
 #[derive(Debug, Eq, PartialEq)]
+pub enum PseudoElementSelector {
+    After(Pos),
+    Before(Pos),
+    Cue(Pos),
+    FirstLetter(Pos),
+    FirstLine(Pos),
+    Selection(Pos),
+    Slotted(Pos),
+}
+
+#[derive(Debug, Eq, PartialEq)]
 pub enum Selector {
     Seq(Vec<Selector>),
     Simple(SimpleSelector),
     Attr(AttrSelector),
     PseudoClass(PseudoClassSelector),
+    PseudoElement(PseudoElementSelector),
 }
 
 pub struct SelectorParser {
@@ -281,8 +293,11 @@ impl SelectorParser {
             Ok(sel) => selectors.push(sel),
             Err(..) => (),
         }
-        let parsers: Vec<ParserFn<Selector>> =
-            vec![Self::parse_attr_selector, Self::parse_pseudo_class_selector];
+        let parsers: Vec<ParserFn<Selector>> = vec![
+            Self::parse_attr_selector,
+            Self::parse_pseudo_class_selector,
+            Self::parse_pseudo_element_selector,
+        ];
         loop {
             let selector = match self.try_parsers(&parsers, "") {
                 Ok(sel) => sel,
@@ -427,29 +442,31 @@ impl SelectorParser {
         match self.lexer.parse_chars_strict(":") {
             Ok(pos) => {
                 let sel_type = match self.parse_elem_identifier_strict()? {
-                    Token::ElemIdentifier(_, sel_name) => match sel_name.as_ref() {
-                        "hover" => PseudoClassSelectorType::Hover,
-                        "lang" => PseudoClassSelectorType::Lang(self.parse_pcs_lang_args()?),
-                        "not" => PseudoClassSelectorType::Not(self.parse_pcs_not_args()?),
-                        "nth-child" => {
-                            PseudoClassSelectorType::NthChild(self.parse_nth_pcs_args()?)
+                    Token::ElemIdentifier(_, sel_name) => {
+                        match sel_name.to_ascii_lowercase().as_ref() {
+                            "hover" => PseudoClassSelectorType::Hover,
+                            "lang" => PseudoClassSelectorType::Lang(self.parse_pcs_lang_args()?),
+                            "not" => PseudoClassSelectorType::Not(self.parse_pcs_not_args()?),
+                            "nth-child" => {
+                                PseudoClassSelectorType::NthChild(self.parse_nth_pcs_args()?)
+                            }
+                            "nth-last-child" => {
+                                PseudoClassSelectorType::NthLastChild(self.parse_nth_pcs_args()?)
+                            }
+                            "nth-last-of-type" => {
+                                PseudoClassSelectorType::NthLastOfType(self.parse_nth_pcs_args()?)
+                            }
+                            "nth-of-type" => {
+                                PseudoClassSelectorType::NthOfType(self.parse_nth_pcs_args()?)
+                            }
+                            _ => {
+                                return Err(SelectorParserError::Unexpected(
+                                    pos,
+                                    format!("unsupported pseudo-class selector: ::{}", sel_name),
+                                ))
+                            }
                         }
-                        "nth-last-child" => {
-                            PseudoClassSelectorType::NthLastChild(self.parse_nth_pcs_args()?)
-                        }
-                        "nth-last-of-type" => {
-                            PseudoClassSelectorType::NthLastOfType(self.parse_nth_pcs_args()?)
-                        }
-                        "nth-of-type" => {
-                            PseudoClassSelectorType::NthOfType(self.parse_nth_pcs_args()?)
-                        }
-                        _ => {
-                            return Err(SelectorParserError::Unexpected(
-                                pos,
-                                format!("unsupported pseudo-class selector: ::{}", sel_name),
-                            ))
-                        }
-                    },
+                    }
                     _ => unreachable!(),
                 };
                 Ok(Selector::PseudoClass(PseudoClassSelector::new(
@@ -458,6 +475,58 @@ impl SelectorParser {
                 )))
             }
             Err(err) => return Err(SelectorParserError::from(err)),
+        }
+    }
+
+    fn parse_pseudo_element_selector_name(
+        &mut self,
+        start_pos: Pos,
+    ) -> Result<PseudoElementSelector> {
+        match self.parse_elem_identifier_strict()? {
+            Token::ElemIdentifier(_, sel_name) => match sel_name.to_ascii_lowercase().as_ref() {
+                "after" => Ok(PseudoElementSelector::After(start_pos)),
+                "before" => Ok(PseudoElementSelector::Before(start_pos)),
+                "cue" => Ok(PseudoElementSelector::Cue(start_pos)),
+                "first-letter" => Ok(PseudoElementSelector::FirstLetter(start_pos)),
+                "first-line" => Ok(PseudoElementSelector::FirstLine(start_pos)),
+                "selection" => Ok(PseudoElementSelector::Selection(start_pos)),
+                "slotted" => Ok(PseudoElementSelector::Slotted(start_pos)),
+                _ => Err(SelectorParserError::Unexpected(
+                    start_pos,
+                    format!("unsupported pseudo-element selector: ::{}", sel_name),
+                )),
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    fn parse_pseudo_element_selector_single_colon(&mut self) -> Result<Selector> {
+        match self.lexer.parse_chars_strict(":") {
+            Ok(pos) => Ok(Selector::PseudoElement(
+                self.parse_pseudo_element_selector_name(pos)?,
+            )),
+            Err(err) => Err(SelectorParserError::from(err)),
+        }
+    }
+
+    fn parse_pseudo_element_selector_double_colon(&mut self) -> Result<Selector> {
+        match self.lexer.parse_chars_strict("::") {
+            Ok(pos) => Ok(Selector::PseudoElement(
+                self.parse_pseudo_element_selector_name(pos)?,
+            )),
+            Err(err) => Err(SelectorParserError::from(err)),
+        }
+    }
+
+    // strict
+    fn parse_pseudo_element_selector(&mut self) -> Result<Selector> {
+        let start_pos = self.pos();
+        match self.parse_pseudo_element_selector_single_colon() {
+            ok @ Ok(..) => ok,
+            Err(..) => {
+                self.set_pos(start_pos);
+                self.parse_pseudo_element_selector_double_colon()
+            }
         }
     }
 }
@@ -760,6 +829,119 @@ mod tests {
             ]))
         );
         assert_eq!(parser.pos(), (24, 1, 25));
+    }
+
+    #[test]
+    fn test_parse_selector_seq4() {
+        let mut parser = SelectorParser::new(":nth-child(even)[href I]");
+        let res = parser.parse_selector_seq();
+        assert_eq!(
+            res,
+            Ok(Selector::Seq(vec![
+                Selector::PseudoClass(PseudoClassSelector::new(
+                    (0, 1, 1),
+                    PseudoClassSelectorType::NthChild(NthExpr::Even((11, 1, 12))),
+                )),
+                Selector::Attr(AttrSelector::new(
+                    (16, 1, 17),
+                    Token::AttrIdentifier((17, 1, 18), "href".to_string()),
+                    None,
+                    true,
+                )),
+            ]))
+        );
+        assert_eq!(parser.pos(), (24, 1, 25));
+    }
+
+    #[test]
+    fn test_parse_selector_seq5() {
+        let mut parser = SelectorParser::new("[href I]::after");
+        let res = parser.parse_selector_seq();
+        assert_eq!(
+            res,
+            Ok(Selector::Seq(vec![
+                Selector::Attr(AttrSelector::new(
+                    (0, 1, 1),
+                    Token::AttrIdentifier((1, 1, 2), "href".to_string()),
+                    None,
+                    true,
+                )),
+                Selector::PseudoElement(PseudoElementSelector::After((8, 1, 9))),
+            ]))
+        );
+        assert_eq!(parser.pos(), (15, 1, 16));
+    }
+
+    #[test]
+    fn test_parse_selector_seq6() {
+        let mut parser = SelectorParser::new("div#id.cl1.cl2:nth-child(even)[href='link'I]::after");
+        let res = parser.parse_selector_seq();
+        assert_eq!(
+            res,
+            Ok(Selector::Seq(vec![
+                Selector::Simple(SimpleSelector::new(
+                    (0, 1, 1),
+                    Some(ElemType::Div),
+                    Some(Token::AttrIdentifier((4, 1, 5), "id".to_string())),
+                    vec![
+                        Token::AttrIdentifier((7, 1, 8), "cl1".to_string()),
+                        Token::AttrIdentifier((11, 1, 12), "cl2".to_string()),
+                    ],
+                    false,
+                )),
+                Selector::PseudoClass(PseudoClassSelector::new(
+                    (14, 1, 15),
+                    PseudoClassSelectorType::NthChild(NthExpr::Even((25, 1, 26))),
+                )),
+                Selector::Attr(AttrSelector::new(
+                    (30, 1, 31),
+                    Token::AttrIdentifier((31, 1, 32), "href".to_string()),
+                    Some((
+                        AttrSelectorOp::Exactly((35, 1, 36)),
+                        Token::Str((36, 1, 37), "link".to_string()),
+                    )),
+                    true,
+                )),
+                Selector::PseudoElement(PseudoElementSelector::After((44, 1, 45))),
+            ]))
+        );
+        assert_eq!(parser.pos(), (51, 1, 52));
+    }
+
+    #[test]
+    fn test_parse_selector_seq7() {
+        let mut parser = SelectorParser::new("div#id.cl1.cl2:nth-child(even)[href='link'I]:after");
+        let res = parser.parse_selector_seq();
+        assert_eq!(
+            res,
+            Ok(Selector::Seq(vec![
+                Selector::Simple(SimpleSelector::new(
+                    (0, 1, 1),
+                    Some(ElemType::Div),
+                    Some(Token::AttrIdentifier((4, 1, 5), "id".to_string())),
+                    vec![
+                        Token::AttrIdentifier((7, 1, 8), "cl1".to_string()),
+                        Token::AttrIdentifier((11, 1, 12), "cl2".to_string()),
+                    ],
+                    false,
+                )),
+                Selector::PseudoClass(PseudoClassSelector::new(
+                    (14, 1, 15),
+                    PseudoClassSelectorType::NthChild(NthExpr::Even((25, 1, 26))),
+                )),
+                Selector::Attr(AttrSelector::new(
+                    (30, 1, 31),
+                    Token::AttrIdentifier((31, 1, 32), "href".to_string()),
+                    Some((
+                        AttrSelectorOp::Exactly((35, 1, 36)),
+                        Token::Str((36, 1, 37), "link".to_string()),
+                    )),
+                    true,
+                )),
+                Selector::PseudoElement(PseudoElementSelector::After((44, 1, 45))),
+            ]))
+        );
+        assert_eq!(parser.pos(), (50, 1, 51));
     }
 
     #[test]
@@ -1175,5 +1357,75 @@ mod tests {
             ))
         );
         assert_eq!(parser.pos(), (13, 1, 14));
+    }
+
+    #[test]
+    fn test_parse_pes1() {
+        let mut parser = SelectorParser::new("::after");
+        let res = parser.parse_pseudo_element_selector();
+        assert_eq!(
+            res,
+            Ok(Selector::PseudoElement(PseudoElementSelector::After((
+                0,
+                1,
+                1
+            ))))
+        );
+        assert_eq!(parser.pos(), (7, 1, 8))
+    }
+
+    #[test]
+    fn test_parse_pes2() {
+        let mut parser = SelectorParser::new(":after");
+        let res = parser.parse_pseudo_element_selector();
+        assert_eq!(
+            res,
+            Ok(Selector::PseudoElement(PseudoElementSelector::After((
+                0,
+                1,
+                1
+            ))))
+        );
+        assert_eq!(parser.pos(), (6, 1, 7))
+    }
+
+    #[test]
+    fn test_parse_pes3() {
+        let mut parser = SelectorParser::new("::first-letter");
+        let res = parser.parse_pseudo_element_selector();
+        assert_eq!(
+            res,
+            Ok(Selector::PseudoElement(PseudoElementSelector::FirstLetter(
+                (0, 1, 1)
+            )))
+        );
+        assert_eq!(parser.pos(), (14, 1, 15))
+    }
+
+    #[test]
+    fn test_parse_pes4() {
+        let mut parser = SelectorParser::new(":first-letter");
+        let res = parser.parse_pseudo_element_selector();
+        assert_eq!(
+            res,
+            Ok(Selector::PseudoElement(PseudoElementSelector::FirstLetter(
+                (0, 1, 1)
+            )))
+        );
+        assert_eq!(parser.pos(), (13, 1, 14))
+    }
+
+    #[test]
+    fn test_parse_pes_fail1() {
+        let mut parser = SelectorParser::new("::first-lette");
+        let res = parser.parse_pseudo_element_selector();
+        assert_eq!(
+            res,
+            Err(SelectorParserError::Unexpected(
+                (0, 1, 1),
+                "unsupported pseudo-element selector: ::first-lette".to_string()
+            ))
+        );
+        assert_eq!(parser.pos(), (13, 1, 14))
     }
 }

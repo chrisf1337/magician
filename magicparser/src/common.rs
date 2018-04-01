@@ -23,6 +23,7 @@ pub enum ElemType {
     H1,
     P,
     A,
+    Div,
     Custom(String),
 }
 
@@ -36,6 +37,7 @@ impl ElemType {
             "h1" => Some(ElemType::H1),
             "p" => Some(ElemType::P),
             "a" => Some(ElemType::A),
+            "div" => Some(ElemType::Div),
             custom => Some(ElemType::Custom(custom.to_string())),
         }
     }
