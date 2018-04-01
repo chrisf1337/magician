@@ -1,7 +1,7 @@
-use common::{ElemType, Pos, Token};
-use error::Error;
-use lexer::Lexer;
-use parser::Parser;
+use magicparser::common::{ElemType, Pos, Token};
+use magicparser::error::Error;
+use magicparser::lexer::Lexer;
+use magicparser::parser::Parser;
 use std::convert::From;
 use std::result;
 

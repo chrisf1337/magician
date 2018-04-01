@@ -1,7 +1,7 @@
-use common::{ElemType, Pos, Token};
-use error::{Error, Result};
-use lexer::Lexer;
-use parser::Parser;
+use magicparser::common::{ElemType, Pos, Token};
+use magicparser::error::{Error, Result};
+use magicparser::lexer::Lexer;
+use magicparser::parser::Parser;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct DomNode {
@@ -320,7 +320,8 @@ mod tests {
 
     #[test]
     fn test_parse_tag_attributes_multiple_value_types() {
-        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap()).join("htmlparser_tests");
+        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap())
+            .join("src/magicparser/htmlparser_tests");
         let mut f = File::open(test_dir.join("parse_tag_attributes_multiple_value_types.html"))
             .expect("file not found");
         let mut input = String::new();
@@ -349,7 +350,8 @@ mod tests {
 
     #[test]
     fn test_parse_tag_attributes_whitespace() {
-        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap()).join("htmlparser_tests");
+        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap())
+            .join("src/magicparser/htmlparser_tests");
         let mut f = File::open(test_dir.join("parse_tag_attributes_whitespace.html"))
             .expect("file not found");
         let mut input = String::new();
@@ -926,7 +928,8 @@ mod tests {
 
     #[test]
     fn test_parse_with_doctype() {
-        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap()).join("htmlparser_tests");
+        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap())
+            .join("src/magicparser/htmlparser_tests");
         let mut f = File::open(test_dir.join("simple.html")).expect("file not found");
         let mut input = String::new();
         f.read_to_string(&mut input).expect("read");

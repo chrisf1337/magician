@@ -1,11 +1,4 @@
 [[package]]
 name = "magician"
 version = "0.1.0"
-dependencies = [
- "magicparser 0.1.0",
-]
-
-[[package]]
-name = "magicparser"
-version = "0.1.0"
 

@@ -1,10 +1,12 @@
-use common::Pos;
-use error::{Error, Result};
-use lexer::Lexer;
-use parser::Parser;
+use magicparser::common::Pos;
+use magicparser::error::{Error, Result};
+use magicparser::lexer::Lexer;
+use magicparser::parser::Parser;
+use magicparser::selectorparser::{Selector, SelectorParser};
 
 type DeclBlock = Vec<(Token, Token)>;
-type Block = (Token, DeclBlock);
+type IntermediateBlock = (Token, DeclBlock);
+type Block = (Selector, DeclBlock);
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Token {
@@ -137,13 +139,13 @@ impl CssParser {
         Ok(declarations)
     }
 
-    fn parse_block(&mut self) -> Result<Block> {
+    fn parse_block(&mut self) -> Result<IntermediateBlock> {
         let selector = self.parse_selector()?;
         let decl_block = self.parse_decl_block()?;
         Ok((selector, decl_block))
     }
 
-    fn parse_blocks(&mut self) -> Result<Vec<Block>> {
+    fn parse_blocks(&mut self) -> Result<Vec<IntermediateBlock>> {
         let mut blocks = vec![];
         loop {
             match self.parse_block() {
@@ -154,9 +156,16 @@ impl CssParser {
         Ok(blocks)
     }
 
-    pub fn parse(input: &str) -> Result<Vec<Block>> {
+    pub fn parse(input: &str) -> Result<Vec<IntermediateBlock>> {
         let mut parser = CssParser::new(input);
-        parser.parse_blocks()
+        let int_blocks = parser.parse_blocks()?;
+        Ok(int_blocks)
+        // let blocks = vec![];
+        // for &block in blocks.into_iter() {
+        //     match block {
+        //         (Token::Selector(pos, )) =>
+        //     }
+        // }
     }
 }
 
@@ -294,7 +303,8 @@ mod tests {
 
     #[test]
     fn test_simple() {
-        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap()).join("cssparser_tests");
+        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap())
+            .join("src/magicparser/cssparser_tests");
         let mut f = File::open(test_dir.join("simple.css")).expect("file not found");
         let mut input = String::new();
         f.read_to_string(&mut input).expect("read");

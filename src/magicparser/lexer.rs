@@ -1,5 +1,5 @@
-use common::Pos;
-use error::{Error, Result};
+use magicparser::common::Pos;
+use magicparser::error::{Error, Result};
 
 pub struct Lexer {
     input: Vec<char>,
@@ -26,6 +26,11 @@ impl Lexer {
             block_comment_start: block_comment_start.to_string(),
             block_comment_end: block_comment_end.to_string(),
         }
+    }
+
+    pub fn new_input(&mut self, input: &str) {
+        self.input = input.chars().collect();
+        self.set_pos((0, 1, 1));
     }
 
     pub fn set_pos(&mut self, pos: Pos) {

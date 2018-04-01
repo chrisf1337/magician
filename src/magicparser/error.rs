@@ -1,4 +1,4 @@
-use common::Pos;
+use magicparser::common::Pos;
 use std::result;
 
 #[derive(Debug, Eq, PartialEq)]
