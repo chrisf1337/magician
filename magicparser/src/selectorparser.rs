@@ -209,7 +209,7 @@ impl SelectorParser {
                 }
                 Ok((_, _)) => match self.parse_elem_identifier_strict() {
                     Ok(Token::ElemIdentifier(_, elem_name)) => {
-                        elem_type = ElemType::from_str(&elem_name);
+                        elem_type = Some(ElemType::from(&elem_name));
                         found = true;
                     }
                     Ok(_) => unreachable!(),
@@ -257,7 +257,7 @@ impl SelectorParser {
     fn parse_attr_selector(&mut self) -> Result<Selector> {
         let start_pos = self.pos();
         self.lexer.parse_chars_strict("[")?;
-        let attr = self.parse_attr_identifier()?;
+        let attr = self.parse_attr_identifier()?.to_lowercase();
         let op = match self.parse_attr_selector_op() {
             Ok(op) => Some(op),
             Err(SelectorParserError::Unexpected(..)) => None,
@@ -553,7 +553,7 @@ mod tests {
             res,
             Ok(Selector::Simple(SimpleSelector::new(
                 (0, 1, 1),
-                ElemType::from_str("abcd"),
+                Some(ElemType::from("abcd")),
                 None,
                 vec![],
                 false,
@@ -621,7 +621,7 @@ mod tests {
             res,
             Ok(Selector::Simple(SimpleSelector::new(
                 (0, 1, 1),
-                ElemType::from_str("ab"),
+                Some(ElemType::from("ab")),
                 Some(Token::AttrIdentifier((3, 1, 4), "id".to_string())),
                 vec![
                     Token::AttrIdentifier((6, 1, 7), "cl1".to_string()),
@@ -673,7 +673,7 @@ mod tests {
             res,
             Ok(Selector::Simple(SimpleSelector::new(
                 (0, 1, 1),
-                ElemType::from_str("ab"),
+                Some(ElemType::from("ab")),
                 Some(Token::AttrIdentifier((3, 1, 4), "id".to_string())),
                 vec![
                     Token::AttrIdentifier((7, 1, 8), "cl1".to_string()),
@@ -721,6 +721,22 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_attr_selector_caps() {
+        let mut parser = SelectorParser::new("[ AbC ]");
+        let res = parser.parse_attr_selector();
+        assert_eq!(
+            res,
+            Ok(Selector::Attr(AttrSelector::new(
+                (0, 1, 1),
+                Token::AttrIdentifier((2, 1, 3), "abc".to_string()),
+                None,
+                false,
+            )))
+        );
+        assert_eq!(parser.pos(), (7, 1, 8));
+    }
+
+    #[test]
     fn test_parse_attr_selector_fail1() {
         let mut parser = SelectorParser::new("[ a = a/ ]");
         let res = parser.parse_attr_selector();
@@ -757,7 +773,7 @@ mod tests {
             Ok(Selector::Seq(vec![
                 Selector::Simple(SimpleSelector::new(
                     (0, 1, 1),
-                    ElemType::from_str("a"),
+                    Some(ElemType::from("a")),
                     Some(Token::AttrIdentifier((2, 1, 3), "id".to_string())),
                     vec![],
                     false,

@@ -124,18 +124,7 @@ impl HtmlParser {
             }
         };
         let elem_type = match tag_id {
-            Token::ElemIdentifier(tag_id_pos, tag_id_str) => {
-                match ElemType::from_str(&tag_id_str) {
-                    Some(elem_type) => elem_type,
-                    None => {
-                        // should be unreachable since from_str() has a catch-all Custom case
-                        return Err(Error::Unexpected(
-                            tag_id_pos,
-                            format!("unexpected element type: {}", tag_id_str),
-                        ));
-                    }
-                }
-            }
+            Token::ElemIdentifier(tag_id_pos, tag_id_str) => ElemType::from(&tag_id_str),
             _ => unreachable!(),
         };
         if elem_type.is_void_elem() {
@@ -173,18 +162,7 @@ impl HtmlParser {
         let _ = self.lexer().try_parse_one_char_strict('/')?;
         let tag_id = self.parse_elem_identifier_strict()?;
         let elem_type = match tag_id {
-            Token::ElemIdentifier(tag_id_pos, tag_id_str) => {
-                match ElemType::from_str(&tag_id_str) {
-                    Some(elem_type) => elem_type,
-                    None => {
-                        // should be unreachable since from_str() has a catch-all Custom case
-                        return Err(Error::Unexpected(
-                            tag_id_pos,
-                            format!("unexpected element type: {}", tag_id_str),
-                        ));
-                    }
-                }
-            }
+            Token::ElemIdentifier(tag_id_pos, tag_id_str) => ElemType::from(&tag_id_str),
             _ => unreachable!(),
         };
         if opening_tag.elem_type != elem_type {
@@ -768,7 +746,28 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_fail_eof1() {
+    fn test_parse_node_case() {
+        let mut parser = HtmlParser::new("<div id=An-Id></div>");
+        let res = parser.parse_node();
+        assert_eq!(
+            res,
+            Ok(DomNode::new(
+                (0, 1, 1),
+                ElemType::Div,
+                vec![
+                    (
+                        Token::AttrIdentifier((5, 1, 6), "id".to_string()),
+                        Some(Token::Value((8, 1, 9), "An-Id".to_string())),
+                    ),
+                ],
+                vec![]
+            ))
+        );
+        assert_eq!(parser.pos(), (20, 1, 21));
+    }
+
+    #[test]
+    fn test_parse_node_fail_eof1() {
         let mut parser = HtmlParser::new("<html");
         let res = parser.parse_node();
         assert_eq!(
@@ -782,7 +781,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_fail_eof2() {
+    fn test_parse_node_fail_eof2() {
         let mut parser = HtmlParser::new("<html>");
         let res = parser.parse_node();
         assert_eq!(
@@ -799,7 +798,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_fail_mismatched_closing_tag1() {
+    fn test_parse_node_fail_mismatched_closing_tag1() {
         let mut parser = HtmlParser::new("<html></body>");
         let res = parser.parse_node();
         assert_eq!(
@@ -819,7 +818,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_fail_mismatched_closing_tag2() {
+    fn test_parse_node_fail_mismatched_closing_tag2() {
         let mut parser = HtmlParser::new("<html><body></body><body></body></body>");
         let res = parser.parse_node();
         assert_eq!(
@@ -837,7 +836,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_with_comment1() {
+    fn test_parse_node_with_comment1() {
         let mut parser = HtmlParser::new("<ht<!-- -->ml></html>  ");
         let res = parser.parse_node();
         assert_eq!(

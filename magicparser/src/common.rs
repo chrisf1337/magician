@@ -1,3 +1,5 @@
+use std::convert::From;
+
 pub type Pos = (usize, usize, usize); // index, row, col
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -11,6 +13,18 @@ pub enum Token {
     // any string not containing whitespace, <, or >
     Value(Pos, String),
     Number(Pos, isize),
+}
+
+impl Token {
+    pub fn to_lowercase(self) -> Self {
+        match self {
+            Token::Str(pos, st) => Token::Str(pos, st.to_lowercase()),
+            Token::ElemIdentifier(pos, st) => Token::ElemIdentifier(pos, st.to_lowercase()),
+            Token::AttrIdentifier(pos, st) => Token::AttrIdentifier(pos, st.to_lowercase()),
+            Token::Value(pos, st) => Token::Value(pos, st.to_lowercase()),
+            _ => self,
+        }
+    }
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -27,21 +41,39 @@ pub enum ElemType {
     Custom(String),
 }
 
-impl ElemType {
-    pub fn from_str(tag_id_str: &str) -> Option<ElemType> {
+impl<'a> From<&'a str> for ElemType {
+    fn from(tag_id_str: &str) -> Self {
         match tag_id_str.to_ascii_lowercase().as_ref() {
-            "html" => Some(ElemType::Html),
-            "head" => Some(ElemType::Head),
-            "body" => Some(ElemType::Body),
-            "img" => Some(ElemType::Img),
-            "h1" => Some(ElemType::H1),
-            "p" => Some(ElemType::P),
-            "a" => Some(ElemType::A),
-            "div" => Some(ElemType::Div),
-            custom => Some(ElemType::Custom(custom.to_string())),
+            "html" => ElemType::Html,
+            "head" => ElemType::Head,
+            "body" => ElemType::Body,
+            "img" => ElemType::Img,
+            "h1" => ElemType::H1,
+            "p" => ElemType::P,
+            "a" => ElemType::A,
+            "div" => ElemType::Div,
+            custom => ElemType::Custom(custom.to_string()),
         }
     }
+}
 
+impl<'a> From<&'a String> for ElemType {
+    fn from(tag_id_str: &String) -> Self {
+        match tag_id_str.to_ascii_lowercase().as_ref() {
+            "html" => ElemType::Html,
+            "head" => ElemType::Head,
+            "body" => ElemType::Body,
+            "img" => ElemType::Img,
+            "h1" => ElemType::H1,
+            "p" => ElemType::P,
+            "a" => ElemType::A,
+            "div" => ElemType::Div,
+            custom => ElemType::Custom(custom.to_string()),
+        }
+    }
+}
+
+impl ElemType {
     pub fn is_void_elem(&self) -> bool {
         match self {
             &ElemType::Img => true,
