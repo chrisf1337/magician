@@ -1046,7 +1046,23 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_selector_seq_single_selector() {
+    fn test_parse_selector_seq8() {
+        let mut parser = SelectorParser::new("[id]p");
+        let res = parser.parse_selector_seq();
+        assert_eq!(
+            res,
+            Ok(Selector::Attr(AttrSelector::new(
+                (0, 1, 1),
+                Token::AttrIdentifier((1, 1, 2), "id".to_string()),
+                None,
+                false
+            )))
+        );
+        assert_eq!(parser.pos(), (4, 1, 5));
+    }
+
+    #[test]
+    fn test_parse_selector_seq_single_selector1() {
         let mut parser = SelectorParser::new("[href]");
         let res = parser.parse_selector_seq();
         assert_eq!(
@@ -1056,6 +1072,20 @@ mod tests {
                 Token::AttrIdentifier((1, 1, 2), "href".to_string()),
                 None,
                 false
+            )))
+        );
+        assert_eq!(parser.pos(), (6, 1, 7));
+    }
+
+    #[test]
+    fn test_parse_selector_seq_single_selector2() {
+        let mut parser = SelectorParser::new(":hover");
+        let res = parser.parse_selector_seq();
+        assert_eq!(
+            res,
+            Ok(Selector::PseudoClass(PseudoClassSelector::new(
+                (0, 1, 1),
+                PseudoClassSelectorType::Hover
             )))
         );
         assert_eq!(parser.pos(), (6, 1, 7));
@@ -1650,7 +1680,44 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_selector_group1() {
+    fn test_parse_selector4() {
+        let mut parser = SelectorParser::new("div > div + div");
+        let res = parser.parse_selector();
+        assert_eq!(
+            res,
+            Ok(Selector::Combinator(
+                Box::new(Selector::Simple(SimpleSelector::new(
+                    (0, 1, 1),
+                    Some(ElemType::Div),
+                    None,
+                    vec![],
+                    false,
+                ))),
+                Combinator::Child((4, 1, 5)),
+                Box::new(Selector::Combinator(
+                    Box::new(Selector::Simple(SimpleSelector::new(
+                        (6, 1, 7),
+                        Some(ElemType::Div),
+                        None,
+                        vec![],
+                        false,
+                    ))),
+                    Combinator::AdjacentSibling((10, 1, 11)),
+                    Box::new(Selector::Simple(SimpleSelector::new(
+                        (12, 1, 13),
+                        Some(ElemType::Div),
+                        None,
+                        vec![],
+                        false,
+                    ))),
+                ))
+            ))
+        );
+        assert_eq!(parser.pos(), (15, 1, 16));
+    }
+
+    #[test]
+    fn test_parse_selector_list1() {
         let mut parser = SelectorParser::new("div   div");
         let res = parser.parse_selector_list();
         assert_eq!(
@@ -1677,7 +1744,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_selector_group2() {
+    fn test_parse_selector_list2() {
         let mut parser = SelectorParser::new("div , div");
         let res = parser.parse_selector_list();
         assert_eq!(
@@ -1703,6 +1770,33 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_selector_list3() {
+        let mut parser = SelectorParser::new("div , div,*");
+        let res = parser.parse_selector_list();
+        assert_eq!(
+            res,
+            Ok(Selector::Group(vec![
+                Selector::Simple(SimpleSelector::new(
+                    (0, 1, 1),
+                    Some(ElemType::Div),
+                    None,
+                    vec![],
+                    false,
+                )),
+                Selector::Simple(SimpleSelector::new(
+                    (6, 1, 7),
+                    Some(ElemType::Div),
+                    None,
+                    vec![],
+                    false,
+                )),
+                Selector::Simple(SimpleSelector::new((10, 1, 11), None, None, vec![], true)),
+            ]))
+        );
+        assert_eq!(parser.pos(), (11, 1, 12));
+    }
+
+    #[test]
     fn test_parse1() {
         let res = SelectorParser::parse("div , div", (0, 1, 1));
         assert_eq!(
@@ -1723,6 +1817,18 @@ mod tests {
                     false,
                 )),
             ]))
+        );
+    }
+
+    #[test]
+    fn test_parse2() {
+        let res = SelectorParser::parse(":hover", (0, 1, 1));
+        assert_eq!(
+            res,
+            Ok(Selector::PseudoClass(PseudoClassSelector::new(
+                (0, 1, 1),
+                PseudoClassSelectorType::Hover
+            )))
         );
     }
 
