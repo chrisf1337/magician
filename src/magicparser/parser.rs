@@ -8,9 +8,7 @@ pub trait Parser<E: From<Error>> {
     fn lexer_immut(&self) -> &Lexer;
 
     fn set_pos(&mut self, pos: Pos) {
-        self.lexer().index = pos.0;
-        self.lexer().row = pos.1;
-        self.lexer().col = pos.2;
+        self.lexer().set_pos(pos)
     }
 
     fn pos(&self) -> Pos {
@@ -174,7 +172,7 @@ pub trait Parser<E: From<Error>> {
                 } else {
                     break;
                 },
-                Err(..) => break,
+                Err(_) => break,
             }
         }
         if num.is_empty() {
@@ -185,7 +183,7 @@ pub trait Parser<E: From<Error>> {
         } else {
             match num.into_iter().collect::<String>().parse::<isize>() {
                 Ok(n) => Ok(Token::Number(start_pos, n)),
-                Err(..) => Err(E::from(Error::Unexpected(
+                Err(_) => Err(E::from(Error::Unexpected(
                     start_pos,
                     "expected number".to_string(),
                 ))),

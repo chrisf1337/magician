@@ -4,4 +4,4 @@ pub mod error;
 pub mod htmlparser;
 mod lexer;
 mod parser;
-mod selectorparser;
+pub mod selectorparser;

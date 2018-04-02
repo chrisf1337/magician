@@ -3,15 +3,27 @@ use magicparser::error::{Error, Result};
 
 pub struct Lexer {
     input: Vec<char>,
-    pub index: usize,
-    pub row: usize,
-    pub col: usize,
+    index: usize,
+    row: usize,
+    col: usize,
+    // offset is the starting index passed to new_with_pos(). pos() will add
+    // offset to index to get the "global" index.
+    offset: usize,
     block_comment_start: String,
     block_comment_end: String,
 }
 
 impl Lexer {
     pub fn new(input: &str, block_comment_start: &str, block_comment_end: &str) -> Lexer {
+        Self::new_with_pos(input, (0, 1, 1), block_comment_start, block_comment_end)
+    }
+
+    pub fn new_with_pos(
+        input: &str,
+        pos: Pos,
+        block_comment_start: &str,
+        block_comment_end: &str,
+    ) -> Lexer {
         if block_comment_start.len() > 0 && block_comment_end.len() == 0 {
             panic!("cannot have non-empty block comment start and empty block comment end");
         }
@@ -21,8 +33,9 @@ impl Lexer {
         Lexer {
             input: input.chars().collect(),
             index: 0,
-            row: 1,
-            col: 1,
+            row: pos.1,
+            col: pos.2,
+            offset: pos.0,
             block_comment_start: block_comment_start.to_string(),
             block_comment_end: block_comment_end.to_string(),
         }
@@ -34,13 +47,13 @@ impl Lexer {
     }
 
     pub fn set_pos(&mut self, pos: Pos) {
-        self.index = pos.0;
+        self.index = pos.0 - self.offset;
         self.row = pos.1;
         self.col = pos.2;
     }
 
     pub fn pos(&self) -> Pos {
-        (self.index, self.row, self.col)
+        (self.index + self.offset, self.row, self.col)
     }
 
     pub fn eof(&self) -> bool {
@@ -278,7 +291,7 @@ impl Lexer {
         for &chars in chars_list.iter() {
             match self.try_parse_chars_strict(chars) {
                 Ok(pos) => return Ok((pos, chars.to_string())),
-                Err(..) => (),
+                Err(_) => (),
             }
         }
         Err(Error::Unexpected(

@@ -27,14 +27,14 @@ impl CssParser {
     }
 
     fn parse_selector(&mut self) -> Result<Token> {
-        self.lexer().consume_whitespace()?;
+        self.lexer.consume_whitespace()?;
         let start_pos = self.pos();
         let mut selector: Vec<char> = vec![];
         loop {
-            match self.lexer().peek_char() {
+            match self.lexer.peek_char() {
                 Ok((_, ch)) => if ch != '{' && ch != '\n' && ch != ';' {
                     selector.push(ch);
-                    self.lexer().consume_char()?;
+                    self.lexer.consume_char()?;
                 } else {
                     break;
                 },
@@ -56,13 +56,13 @@ impl CssParser {
     }
 
     fn parse_property(&mut self) -> Result<Token> {
-        let _ = self.lexer().consume_whitespace()?;
+        let _ = self.lexer.consume_whitespace()?;
         let start_pos = self.pos();
         let mut property: Vec<char> = vec![];
-        match self.lexer().peek_char() {
+        match self.lexer.peek_char() {
             Ok((_, ch)) => if ch.is_ascii_alphabetic() {
                 property.push(ch);
-                self.lexer().consume_char()?;
+                self.lexer.consume_char()?;
             } else {
                 return Err(Error::Unexpected(
                     start_pos,
@@ -72,10 +72,10 @@ impl CssParser {
             Err(err) => return Err(err),
         }
         loop {
-            match self.lexer().peek_char() {
+            match self.lexer.peek_char() {
                 Ok((_, ch)) => if ch.is_ascii_alphanumeric() || ch == '-' {
                     property.push(ch);
-                    self.lexer().consume_char()?;
+                    self.lexer.consume_char()?;
                 } else {
                     break;
                 },
@@ -93,14 +93,14 @@ impl CssParser {
     }
 
     fn parse_value(&mut self) -> Result<Token> {
-        let _ = self.lexer().consume_whitespace()?;
+        let _ = self.lexer.consume_whitespace()?;
         let start_pos = self.pos();
         let mut value: Vec<char> = vec![];
         loop {
-            match self.lexer().peek_char() {
+            match self.lexer.peek_char() {
                 Ok((_, ch)) => if ch != ';' {
                     value.push(ch);
-                    self.lexer().consume_char()?;
+                    self.lexer.consume_char()?;
                 } else {
                     break;
                 },
@@ -116,21 +116,21 @@ impl CssParser {
 
     fn parse_decl_block(&mut self) -> Result<DeclBlock> {
         let mut declarations: Vec<(Token, Token)> = vec![];
-        let block_start = self.lexer().parse_chars("{")?;
+        let block_start = self.lexer.parse_chars("{")?;
         loop {
             let property = match self.parse_property() {
                 Ok(p) => p,
                 Err(_) => break,
             };
-            self.lexer().try_parse_chars(":")?;
+            self.lexer.try_parse_chars(":")?;
             let value = self.parse_value()?;
-            match self.lexer().try_parse_chars(";") {
+            match self.lexer.try_parse_chars(";") {
                 Ok(_) => (),
                 Err(_) => break,
             }
             declarations.push((property, value));
         }
-        match self.lexer().parse_chars("}") {
+        match self.lexer.parse_chars("}") {
             Ok(_) => (),
             Err(_) => {
                 return Err(Error::Unexpected(block_start, "unclosed block".to_string()));
@@ -156,16 +156,20 @@ impl CssParser {
         Ok(blocks)
     }
 
-    pub fn parse(input: &str) -> Result<Vec<IntermediateBlock>> {
+    pub fn parse(input: &str) -> Result<Vec<Block>> {
         let mut parser = CssParser::new(input);
         let int_blocks = parser.parse_blocks()?;
-        Ok(int_blocks)
-        // let blocks = vec![];
-        // for &block in blocks.into_iter() {
-        //     match block {
-        //         (Token::Selector(pos, )) =>
-        //     }
-        // }
+        let mut blocks = vec![];
+        for (token, decl_block) in int_blocks.into_iter() {
+            match token {
+                Token::Selector(pos, sel_str) => {
+                    blocks.push((SelectorParser::parse(&sel_str, pos)?, decl_block))
+                }
+
+                _ => unreachable!(),
+            }
+        }
+        Ok(blocks)
     }
 }
 
@@ -182,6 +186,8 @@ impl Parser<Error> for CssParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use magicparser::common::ElemType;
+    use magicparser::selectorparser::*;
     use std::env;
     use std::fs::File;
     use std::io::prelude::*;
@@ -302,7 +308,7 @@ mod tests {
     }
 
     #[test]
-    fn test_simple() {
+    fn test_simple1() {
         let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap())
             .join("src/magicparser/cssparser_tests");
         let mut f = File::open(test_dir.join("simple.css")).expect("file not found");
@@ -332,6 +338,101 @@ mod tests {
                 ),
                 (
                     Token::Selector((90, 7, 1), "a:hover, a:active".to_string()),
+                    vec![
+                        (
+                            Token::Property((112, 8, 3), "background-color".to_string()),
+                            Token::Value((130, 8, 21), "red".to_string()),
+                        ),
+                    ],
+                ),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_simple2() {
+        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap())
+            .join("src/magicparser/cssparser_tests");
+        let mut f = File::open(test_dir.join("simple.css")).expect("file not found");
+        let mut input = String::new();
+        f.read_to_string(&mut input).expect("read");
+        let res = CssParser::parse(&input);
+        assert_eq!(
+            res,
+            Ok(vec![
+                (
+                    Selector::Group(vec![
+                        Selector::Seq(vec![
+                            Selector::Simple(SimpleSelector::new(
+                                (0, 1, 1),
+                                Some(ElemType::A),
+                                None,
+                                vec![],
+                                false,
+                            )),
+                            Selector::PseudoClass(PseudoClassSelector::new(
+                                (1, 1, 2),
+                                PseudoClassSelectorType::Link,
+                            )),
+                        ]),
+                        Selector::Seq(vec![
+                            Selector::Simple(SimpleSelector::new(
+                                (8, 1, 9),
+                                Some(ElemType::A),
+                                None,
+                                vec![],
+                                false,
+                            )),
+                            Selector::PseudoClass(PseudoClassSelector::new(
+                                (9, 1, 10),
+                                PseudoClassSelectorType::Visited,
+                            )),
+                        ]),
+                    ]),
+                    vec![
+                        (
+                            Token::Property((22, 2, 3), "background-color".to_string()),
+                            Token::Value((40, 2, 21), "#f44336".to_string()),
+                        ),
+                        (
+                            Token::Property((51, 3, 3), "color".to_string()),
+                            Token::Value((58, 3, 10), "white".to_string()),
+                        ),
+                        (
+                            Token::Property((67, 4, 3), "padding".to_string()),
+                            Token::Value((76, 4, 12), "14px 25px".to_string()),
+                        ),
+                    ],
+                ),
+                (
+                    Selector::Group(vec![
+                        Selector::Seq(vec![
+                            Selector::Simple(SimpleSelector::new(
+                                (90, 7, 1),
+                                Some(ElemType::A),
+                                None,
+                                vec![],
+                                false,
+                            )),
+                            Selector::PseudoClass(PseudoClassSelector::new(
+                                (91, 7, 2),
+                                PseudoClassSelectorType::Hover,
+                            )),
+                        ]),
+                        Selector::Seq(vec![
+                            Selector::Simple(SimpleSelector::new(
+                                (99, 7, 10),
+                                Some(ElemType::A),
+                                None,
+                                vec![],
+                                false,
+                            )),
+                            Selector::PseudoClass(PseudoClassSelector::new(
+                                (100, 7, 11),
+                                PseudoClassSelectorType::Active,
+                            )),
+                        ]),
+                    ]),
                     vec![
                         (
                             Token::Property((112, 8, 3), "background-color".to_string()),

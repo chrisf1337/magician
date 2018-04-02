@@ -2,6 +2,7 @@ use magicparser::common::{ElemType, Pos, Token};
 use magicparser::error::Error;
 use magicparser::lexer::Lexer;
 use magicparser::parser::Parser;
+use std::boxed::Box;
 use std::convert::From;
 use std::result;
 
@@ -56,7 +57,7 @@ pub struct SimpleSelector {
 }
 
 impl SimpleSelector {
-    fn new(
+    pub fn new(
         pos: Pos,
         elem_type: Option<ElemType>,
         id: Option<Token>,
@@ -113,11 +114,14 @@ pub enum NthExpr {
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum PseudoClassSelectorType {
+    Active,
     Hover,
     // experimental: Dir,
     // experimental: Host,
     // experimental: HostContext,
     Lang(Token),
+    Link,
+    Visited,
     Not(Vec<Selector>),
     NthChild(NthExpr),
     NthLastChild(NthExpr),
@@ -132,7 +136,7 @@ pub struct PseudoClassSelector {
 }
 
 impl PseudoClassSelector {
-    fn new(pos: Pos, sel_type: PseudoClassSelectorType) -> PseudoClassSelector {
+    pub fn new(pos: Pos, sel_type: PseudoClassSelectorType) -> PseudoClassSelector {
         PseudoClassSelector { pos, sel_type }
     }
 }
@@ -149,12 +153,22 @@ pub enum PseudoElementSelector {
 }
 
 #[derive(Debug, Eq, PartialEq)]
+pub enum Combinator {
+    AdjacentSibling(Pos), // +
+    GeneralSibling(Pos),  // ~
+    Child(Pos),           // >
+    Descendant(Pos),      // space
+}
+
+#[derive(Debug, Eq, PartialEq)]
 pub enum Selector {
     Seq(Vec<Selector>),
     Simple(SimpleSelector),
     Attr(AttrSelector),
     PseudoClass(PseudoClassSelector),
     PseudoElement(PseudoElementSelector),
+    Combinator(Box<Selector>, Combinator, Box<Selector>),
+    Group(Vec<Selector>), // comma-separated group
 }
 
 pub struct SelectorParser {
@@ -163,8 +177,12 @@ pub struct SelectorParser {
 
 impl SelectorParser {
     fn new(input: &str) -> SelectorParser {
+        Self::new_with_pos(input, (0, 1, 1))
+    }
+
+    fn new_with_pos(input: &str, pos: Pos) -> SelectorParser {
         SelectorParser {
-            lexer: Lexer::new(input, "", ""),
+            lexer: Lexer::new_with_pos(input, pos, "", ""),
         }
     }
 
@@ -179,7 +197,6 @@ impl SelectorParser {
         let mut universal = false;
         let mut found = false;
         loop {
-            println!("{:?}", self.pos());
             match self.lexer.peek_char() {
                 Ok((_, '.')) => {
                     self.lexer.consume_char()?;
@@ -209,13 +226,15 @@ impl SelectorParser {
                 }
                 Ok((_, _)) => match self.parse_elem_identifier_strict() {
                     Ok(Token::ElemIdentifier(_, elem_name)) => {
+                        println!("HERE");
                         elem_type = Some(ElemType::from(&elem_name));
                         found = true;
                     }
                     Ok(_) => unreachable!(),
-                    Err(..) => break,
+                    Err(_) => break,
                 },
-                Err(..) => break,
+
+                Err(_) => break,
             }
         }
         if !found {
@@ -264,7 +283,7 @@ impl SelectorParser {
             Err(err) => return Err(err),
         };
         let val = match op {
-            Some(..) => {
+            Some(_) => {
                 let parsers: Vec<ParserFn<Token>> =
                     vec![Self::parse_attr_identifier, Self::parse_string];
                 Some(self.try_parsers(&parsers, "expected value or string")?)
@@ -285,14 +304,16 @@ impl SelectorParser {
         )))
     }
 
+    // Returns a single selector instead of a Seq if there is only one selector
     fn parse_selector_seq(&mut self) -> Result<Selector> {
         let start_pos = self.pos();
         let mut selectors = vec![];
         // first check for a simple selector, which must come first
         match self.parse_simple_selector() {
             Ok(sel) => selectors.push(sel),
-            Err(..) => (),
+            Err(_) => (),
         }
+        println!("selectors: {:?}", selectors);
         let parsers: Vec<ParserFn<Selector>> = vec![
             Self::parse_attr_selector,
             Self::parse_pseudo_class_selector,
@@ -333,7 +354,7 @@ impl SelectorParser {
         loop {
             match self.lexer.try_parse_chars(",") {
                 Ok(_) => (),
-                Err(..) => break,
+                Err(_) => break,
             }
             self.lexer.consume_whitespace()?;
             match self.try(Self::parse_selector_seq) {
@@ -352,9 +373,9 @@ impl SelectorParser {
     }
 
     fn parse_nth_expr(&mut self) -> Result<NthExpr> {
-        self.lexer().consume_whitespace()?;
+        self.lexer.consume_whitespace()?;
         let start_pos = self.pos();
-        match self.lexer().peek_char() {
+        match self.lexer.peek_char() {
             Ok((_, ch)) => if ch == '+' || ch == '-' || ch == 'n' || ch.is_ascii_digit() {
                 let mut neg_sign = false;
                 let a = match self.parse_number_strict() {
@@ -369,16 +390,16 @@ impl SelectorParser {
                 };
                 let n = if a.is_some() {
                     match self.lexer.try_parse_chars_strict("n") {
-                        Ok(..) => true,
-                        Err(..) => false,
+                        Ok(_) => true,
+                        Err(_) => false,
                     }
                 } else {
                     match self.lexer.try_parse_chars("n") {
-                        Ok(..) => true,
-                        Err(..) => false,
+                        Ok(_) => true,
+                        Err(_) => false,
                     }
                 };
-                let op = match self.lexer().parse_chars_list(vec!["+", "-"]) {
+                let op = match self.lexer.parse_chars_list(vec!["+", "-"]) {
                     Ok((pos, st)) => match st.as_ref() {
                         "+" => Some(NthExprOp::Add(pos)),
                         "-" => Some(NthExprOp::Sub(pos)),
@@ -412,7 +433,7 @@ impl SelectorParser {
                     }
                 }
             } else if ch == 'e' || ch == 'o' {
-                match self.lexer().parse_chars_list_strict(vec!["even", "odd"]) {
+                match self.lexer.parse_chars_list_strict(vec!["even", "odd"]) {
                     Ok((_, st)) => match st.as_ref() {
                         "even" => Ok(NthExpr::Even(start_pos)),
                         "odd" => Ok(NthExpr::Odd(start_pos)),
@@ -444,8 +465,10 @@ impl SelectorParser {
                 let sel_type = match self.parse_elem_identifier_strict()? {
                     Token::ElemIdentifier(_, sel_name) => {
                         match sel_name.to_ascii_lowercase().as_ref() {
+                            "active" => PseudoClassSelectorType::Active,
                             "hover" => PseudoClassSelectorType::Hover,
                             "lang" => PseudoClassSelectorType::Lang(self.parse_pcs_lang_args()?),
+                            "link" => PseudoClassSelectorType::Link,
                             "not" => PseudoClassSelectorType::Not(self.parse_pcs_not_args()?),
                             "nth-child" => {
                                 PseudoClassSelectorType::NthChild(self.parse_nth_pcs_args()?)
@@ -459,6 +482,7 @@ impl SelectorParser {
                             "nth-of-type" => {
                                 PseudoClassSelectorType::NthOfType(self.parse_nth_pcs_args()?)
                             }
+                            "visited" => PseudoClassSelectorType::Visited,
                             _ => {
                                 return Err(SelectorParserError::Unexpected(
                                     pos,
@@ -522,11 +546,86 @@ impl SelectorParser {
     fn parse_pseudo_element_selector(&mut self) -> Result<Selector> {
         let start_pos = self.pos();
         match self.parse_pseudo_element_selector_single_colon() {
-            ok @ Ok(..) => ok,
-            Err(..) => {
+            ok @ Ok(_) => ok,
+            Err(_) => {
                 self.set_pos(start_pos);
                 self.parse_pseudo_element_selector_double_colon()
             }
+        }
+    }
+
+    // strict
+    fn parse_combinator(&mut self) -> Result<Combinator> {
+        use self::Combinator::*;
+        let start_pos = self.pos();
+        match self.lexer.try_parse_chars_list(vec!["+", "~", ">"]) {
+            Ok((pos, st)) => match st.as_ref() {
+                "+" => Ok(AdjacentSibling(pos)),
+                "~" => Ok(GeneralSibling(pos)),
+                ">" => Ok(Child(pos)),
+                _ => unreachable!(),
+            },
+            Err(_) => match self.lexer.parse_chars_strict(" ") {
+                Ok(pos) => Ok(Descendant(pos)),
+                Err(_) => Err(SelectorParserError::Unexpected(
+                    start_pos,
+                    "expected combinator".to_string(),
+                )),
+            },
+        }
+    }
+
+    fn parse_selector(&mut self) -> Result<Selector> {
+        let sel1 = self.parse_selector_seq()?;
+        let pos = self.pos();
+        match self.parse_combinator() {
+            Ok(combinator) => {
+                self.lexer.consume_whitespace()?;
+                let sel2 = match self.parse_selector() {
+                    Ok(sel) => sel,
+                    Err(_) => {
+                        self.set_pos(pos);
+                        return Ok(sel1);
+                    }
+                };
+                Ok(Selector::Combinator(
+                    Box::new(sel1),
+                    combinator,
+                    Box::new(sel2),
+                ))
+            }
+            Err(_) => Ok(sel1),
+        }
+    }
+
+    // if the group only contains one selector, return that selector instead of a group
+    fn parse_selector_group(&mut self) -> Result<Selector> {
+        let mut selectors = vec![self.parse_selector()?];
+        loop {
+            match self.lexer.parse_chars(",") {
+                Ok(_) => {
+                    self.lexer.consume_whitespace()?;
+                    selectors.push(self.parse_selector()?);
+                }
+                Err(_) => if selectors.len() == 1 {
+                    return Ok(selectors.pop().unwrap());
+                } else {
+                    return Ok(Selector::Group(selectors));
+                },
+            }
+        }
+    }
+
+    pub fn parse(input: &str, pos: Pos) -> result::Result<Selector, Error> {
+        let mut parser = SelectorParser::new_with_pos(input, pos);
+        let group = parser.parse_selector_group()?;
+        match parser.lexer.peek_char() {
+            Ok((pos, ch)) => Err(Error::Unexpected(
+                pos,
+                format!("unexpected char '{}' at the end of selector", ch),
+            )),
+            Err(Error::Eof(_)) => Ok(group),
+            Err(err) => Err(err),
         }
     }
 }
@@ -1443,5 +1542,206 @@ mod tests {
             ))
         );
         assert_eq!(parser.pos(), (13, 1, 14))
+    }
+
+    #[test]
+    fn test_parse_combinator1() {
+        let mut parser = SelectorParser::new(" +");
+        let res = parser.parse_combinator();
+        assert_eq!(res, Ok(Combinator::AdjacentSibling((1, 1, 2))));
+        assert_eq!(parser.pos(), (2, 1, 3));
+    }
+
+    #[test]
+    fn test_parse_combinator2() {
+        let mut parser = SelectorParser::new(" a");
+        let res = parser.parse_combinator();
+        assert_eq!(res, Ok(Combinator::Descendant((0, 1, 1))));
+        assert_eq!(parser.pos(), (1, 1, 2));
+    }
+
+    #[test]
+    fn test_parse_selector1() {
+        let mut parser = SelectorParser::new("div#id.cl1.cl2:nth-child(even)[href='link'I]::after");
+        let res = parser.parse_selector();
+        assert_eq!(
+            res,
+            Ok(Selector::Seq(vec![
+                Selector::Simple(SimpleSelector::new(
+                    (0, 1, 1),
+                    Some(ElemType::Div),
+                    Some(Token::AttrIdentifier((4, 1, 5), "id".to_string())),
+                    vec![
+                        Token::AttrIdentifier((7, 1, 8), "cl1".to_string()),
+                        Token::AttrIdentifier((11, 1, 12), "cl2".to_string()),
+                    ],
+                    false,
+                )),
+                Selector::PseudoClass(PseudoClassSelector::new(
+                    (14, 1, 15),
+                    PseudoClassSelectorType::NthChild(NthExpr::Even((25, 1, 26))),
+                )),
+                Selector::Attr(AttrSelector::new(
+                    (30, 1, 31),
+                    Token::AttrIdentifier((31, 1, 32), "href".to_string()),
+                    Some((
+                        AttrSelectorOp::Exactly((35, 1, 36)),
+                        Token::Str((36, 1, 37), "link".to_string()),
+                    )),
+                    true,
+                )),
+                Selector::PseudoElement(PseudoElementSelector::After((44, 1, 45))),
+            ]))
+        );
+        assert_eq!(parser.pos(), (51, 1, 52));
+    }
+
+    #[test]
+    fn test_parse_selector2() {
+        let mut parser = SelectorParser::new("div   div");
+        let res = parser.parse_selector();
+        assert_eq!(
+            res,
+            Ok(Selector::Combinator(
+                Box::new(Selector::Simple(SimpleSelector::new(
+                    (0, 1, 1),
+                    Some(ElemType::Div),
+                    None,
+                    vec![],
+                    false,
+                ))),
+                Combinator::Descendant((3, 1, 4)),
+                Box::new(Selector::Simple(SimpleSelector::new(
+                    (6, 1, 7),
+                    Some(ElemType::Div),
+                    None,
+                    vec![],
+                    false
+                )))
+            ))
+        );
+        assert_eq!(parser.pos(), (9, 1, 10));
+    }
+
+    #[test]
+    fn test_parse_selector3() {
+        let mut parser = SelectorParser::new("div  >div");
+        let res = parser.parse_selector();
+        assert_eq!(
+            res,
+            Ok(Selector::Combinator(
+                Box::new(Selector::Simple(SimpleSelector::new(
+                    (0, 1, 1),
+                    Some(ElemType::Div),
+                    None,
+                    vec![],
+                    false,
+                ))),
+                Combinator::Child((5, 1, 6)),
+                Box::new(Selector::Simple(SimpleSelector::new(
+                    (6, 1, 7),
+                    Some(ElemType::Div),
+                    None,
+                    vec![],
+                    false
+                )))
+            ))
+        );
+        assert_eq!(parser.pos(), (9, 1, 10));
+    }
+
+    #[test]
+    fn test_parse_selector_group1() {
+        let mut parser = SelectorParser::new("div   div");
+        let res = parser.parse_selector_group();
+        assert_eq!(
+            res,
+            Ok(Selector::Combinator(
+                Box::new(Selector::Simple(SimpleSelector::new(
+                    (0, 1, 1),
+                    Some(ElemType::Div),
+                    None,
+                    vec![],
+                    false,
+                ))),
+                Combinator::Descendant((3, 1, 4)),
+                Box::new(Selector::Simple(SimpleSelector::new(
+                    (6, 1, 7),
+                    Some(ElemType::Div),
+                    None,
+                    vec![],
+                    false
+                )))
+            ))
+        );
+        assert_eq!(parser.pos(), (9, 1, 10));
+    }
+
+    #[test]
+    fn test_parse_selector_group2() {
+        let mut parser = SelectorParser::new("div , div");
+        let res = parser.parse_selector_group();
+        assert_eq!(
+            res,
+            Ok(Selector::Group(vec![
+                Selector::Simple(SimpleSelector::new(
+                    (0, 1, 1),
+                    Some(ElemType::Div),
+                    None,
+                    vec![],
+                    false,
+                )),
+                Selector::Simple(SimpleSelector::new(
+                    (6, 1, 7),
+                    Some(ElemType::Div),
+                    None,
+                    vec![],
+                    false,
+                )),
+            ]))
+        );
+        assert_eq!(parser.pos(), (9, 1, 10));
+    }
+
+    #[test]
+    fn test_parse1() {
+        let res = SelectorParser::parse("div , div", (0, 1, 1));
+        assert_eq!(
+            res,
+            Ok(Selector::Group(vec![
+                Selector::Simple(SimpleSelector::new(
+                    (0, 1, 1),
+                    Some(ElemType::Div),
+                    None,
+                    vec![],
+                    false,
+                )),
+                Selector::Simple(SimpleSelector::new(
+                    (6, 1, 7),
+                    Some(ElemType::Div),
+                    None,
+                    vec![],
+                    false,
+                )),
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_parse_fail1() {
+        let res = SelectorParser::parse("div , div,", (0, 1, 1));
+        assert_eq!(res, Err(Error::Eof((10, 1, 11))));
+    }
+
+    #[test]
+    fn test_parse_fail2() {
+        let res = SelectorParser::parse("div , div ;", (0, 1, 1));
+        assert_eq!(
+            res,
+            Err(Error::Unexpected(
+                (10, 1, 11),
+                "unexpected char ';' at the end of selector".to_string()
+            ))
+        );
     }
 }

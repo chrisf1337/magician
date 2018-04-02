@@ -41,25 +41,25 @@ impl HtmlParser {
     }
 
     fn parse_value(&mut self) -> Result<Token> {
-        let _ = self.lexer().consume_whitespace()?;
+        let _ = self.lexer.consume_whitespace()?;
         let start_pos = self.pos();
         let mut id: Vec<char> = vec![];
-        match self.lexer().peek_char() {
+        match self.lexer.peek_char() {
             Ok((_, ch)) => if ch != '<' && ch != '>' && ch != '"' && ch != '\'' {
                 id.push(ch);
-                self.lexer().consume_char()?;
+                self.lexer.consume_char()?;
             } else {
                 return Err(Error::Unexpected(start_pos, "expected value".to_string()));
             },
             Err(err) => return Err(err),
         }
         loop {
-            match self.lexer().peek_char() {
+            match self.lexer.peek_char() {
                 Ok((_, ch)) => if !ch.is_ascii_whitespace() && ch != '<' && ch != '>' && ch != '"'
                     && ch != '\''
                 {
                     id.push(ch);
-                    self.lexer().consume_char()?;
+                    self.lexer.consume_char()?;
                 } else {
                     break;
                 },
@@ -79,7 +79,7 @@ impl HtmlParser {
         let mut attributes: Vec<(Token, Option<Token>)> = vec![];
         loop {
             match self.parse_attr_identifier() {
-                Ok(id) => match self.lexer().try_parse_one_char('=') {
+                Ok(id) => match self.lexer.try_parse_one_char('=') {
                     Ok(_) => {
                         let parsers: Vec<ParserFn<Token>> =
                             vec![Self::parse_string, Self::parse_value];
@@ -109,14 +109,14 @@ impl HtmlParser {
     }
 
     fn parse_doctype(&mut self) -> Result<()> {
-        match self.lexer().parse_chars("<!DOCTYPE html>") {
+        match self.lexer.parse_chars("<!DOCTYPE html>") {
             Ok(_) => Ok(()),
             Err(err) => Err(err),
         }
     }
 
     fn parse_opening_tag(&mut self) -> Result<DomNode> {
-        let tag_start_pos = self.lexer().try_parse_one_char('<')?;
+        let tag_start_pos = self.lexer.try_parse_one_char('<')?;
         let tag_id = match self.parse_elem_identifier_strict() {
             Ok(tag_id) => tag_id,
             Err(err) => {
@@ -124,14 +124,14 @@ impl HtmlParser {
             }
         };
         let elem_type = match tag_id {
-            Token::ElemIdentifier(tag_id_pos, tag_id_str) => ElemType::from(&tag_id_str),
+            Token::ElemIdentifier(_, tag_id_str) => ElemType::from(&tag_id_str),
             _ => unreachable!(),
         };
         if elem_type.is_void_elem() {
             let attrs = self.parse_tag_attributes()?;
-            match self.lexer().try_parse_chars("/>") {
+            match self.lexer.try_parse_chars("/>") {
                 Ok(_) => (),
-                Err(_) => match self.lexer().try_parse_chars(">") {
+                Err(_) => match self.lexer.try_parse_chars(">") {
                     Ok(_) => (),
                     Err(_) => {
                         return Err(Error::Unexpected(
@@ -144,7 +144,7 @@ impl HtmlParser {
             Ok(DomNode::new(tag_start_pos, elem_type, attrs, vec![]))
         } else {
             let attrs = self.parse_tag_attributes()?;
-            match self.lexer().try_parse_one_char('>') {
+            match self.lexer.try_parse_one_char('>') {
                 Ok(_) => (),
                 Err(_) => {
                     return Err(Error::Unexpected(
@@ -158,11 +158,11 @@ impl HtmlParser {
     }
 
     fn parse_closing_tag(&mut self, opening_tag: DomNode) -> Result<DomNode> {
-        let tag_start_pos = self.lexer().try_parse_one_char('<')?;
-        let _ = self.lexer().try_parse_one_char_strict('/')?;
+        let tag_start_pos = self.lexer.try_parse_one_char('<')?;
+        let _ = self.lexer.try_parse_one_char_strict('/')?;
         let tag_id = self.parse_elem_identifier_strict()?;
         let elem_type = match tag_id {
-            Token::ElemIdentifier(tag_id_pos, tag_id_str) => ElemType::from(&tag_id_str),
+            Token::ElemIdentifier(_, tag_id_str) => ElemType::from(&tag_id_str),
             _ => unreachable!(),
         };
         if opening_tag.elem_type != elem_type {
@@ -174,7 +174,7 @@ impl HtmlParser {
                 ),
             ));
         }
-        let _ = self.lexer().try_parse_one_char('>')?;
+        let _ = self.lexer.try_parse_one_char('>')?;
         Ok(opening_tag)
     }
 
@@ -182,9 +182,9 @@ impl HtmlParser {
         let start_pos = self.pos();
         let mut text: Vec<char> = vec![];
         loop {
-            match self.lexer().peek_char() {
+            match self.lexer.peek_char() {
                 Ok((_, ch)) => if ch != '<' {
-                    let (_, ch) = self.lexer().consume_char()?;
+                    let (_, ch) = self.lexer.consume_char()?;
                     text.push(ch);
                 } else {
                     break;
@@ -214,7 +214,7 @@ impl HtmlParser {
             return Ok(node);
         }
         loop {
-            match self.lexer().consume_whitespace() {
+            match self.lexer.consume_whitespace() {
                 Ok(_) => (),
                 Err(Error::Eof(_)) => {
                     return Err(Error::Unexpected(
@@ -224,13 +224,13 @@ impl HtmlParser {
                 }
                 Err(e) => return Err(e),
             };
-            if self.lexer().eof() {
+            if self.lexer.eof() {
                 return Err(Error::Unexpected(
                     node.pos,
                     format!("unclosed element: {:?}", node),
                 ));
             }
-            match self.lexer().peek_chars(2) {
+            match self.lexer.peek_chars(2) {
                 Ok((_, chars)) => {
                     if chars == "</" {
                         match self.parse_closing_tag(node.clone()) {
