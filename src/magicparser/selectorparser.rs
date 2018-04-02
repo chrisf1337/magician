@@ -122,7 +122,7 @@ pub enum PseudoClassSelectorType {
     Lang(Token),
     Link,
     Visited,
-    Not(Vec<Selector>),
+    Not(Box<Selector>),
     NthChild(NthExpr),
     NthLastChild(NthExpr),
     NthLastOfType(NthExpr),
@@ -346,30 +346,11 @@ impl SelectorParser {
         Ok(token)
     }
 
-    fn parse_selector_list(&mut self) -> Result<Vec<Selector>> {
-        let mut selectors = vec![];
-        // parse_selector_seq() is strict, so consume whitespace first
-        self.lexer.consume_whitespace()?;
-        selectors.push(self.try(Self::parse_selector_seq)?);
-        loop {
-            match self.lexer.try_parse_chars(",") {
-                Ok(_) => (),
-                Err(_) => break,
-            }
-            self.lexer.consume_whitespace()?;
-            match self.try(Self::parse_selector_seq) {
-                Ok(sel) => selectors.push(sel),
-                Err(err) => return Err(err),
-            }
-        }
-        Ok(selectors)
-    }
-
-    fn parse_pcs_not_args(&mut self) -> Result<Vec<Selector>> {
+    fn parse_pcs_not_args(&mut self) -> Result<Box<Selector>> {
         self.lexer.parse_chars_strict("(")?;
         let selectors = self.parse_selector_list()?;
         self.lexer.parse_chars(")")?;
-        Ok(selectors)
+        Ok(Box::new(selectors))
     }
 
     fn parse_nth_expr(&mut self) -> Result<NthExpr> {
@@ -598,27 +579,32 @@ impl SelectorParser {
         }
     }
 
-    // if the group only contains one selector, return that selector instead of a group
-    fn parse_selector_group(&mut self) -> Result<Selector> {
-        let mut selectors = vec![self.parse_selector()?];
+    fn parse_selector_list(&mut self) -> Result<Selector> {
+        let mut selectors = vec![];
+        // parse_selector_seq() is strict, so consume whitespace first
+        self.lexer.consume_whitespace()?;
+        selectors.push(self.try(Self::parse_selector)?);
         loop {
-            match self.lexer.parse_chars(",") {
-                Ok(_) => {
-                    self.lexer.consume_whitespace()?;
-                    selectors.push(self.parse_selector()?);
-                }
-                Err(_) => if selectors.len() == 1 {
-                    return Ok(selectors.pop().unwrap());
-                } else {
-                    return Ok(Selector::Group(selectors));
-                },
+            match self.lexer.try_parse_chars(",") {
+                Ok(_) => (),
+                Err(_) => break,
             }
+            self.lexer.consume_whitespace()?;
+            match self.try(Self::parse_selector) {
+                Ok(sel) => selectors.push(sel),
+                Err(err) => return Err(err),
+            }
+        }
+        if selectors.len() == 1 {
+            return Ok(selectors.pop().unwrap());
+        } else {
+            return Ok(Selector::Group(selectors));
         }
     }
 
     pub fn parse(input: &str, pos: Pos) -> result::Result<Selector, Error> {
         let mut parser = SelectorParser::new_with_pos(input, pos);
-        let group = parser.parse_selector_group()?;
+        let group = parser.parse_selector_list()?;
         match parser.lexer.peek_char() {
             Ok((pos, ch)) => Err(Error::Unexpected(
                 pos,
@@ -1128,15 +1114,13 @@ mod tests {
             res,
             Ok(Selector::PseudoClass(PseudoClassSelector::new(
                 (0, 1, 1),
-                PseudoClassSelectorType::Not(vec![
-                    Selector::Simple(SimpleSelector::new(
-                        (6, 1, 7),
-                        Some(ElemType::A),
-                        None,
-                        vec![],
-                        false,
-                    )),
-                ])
+                PseudoClassSelectorType::Not(Box::new(Selector::Simple(SimpleSelector::new(
+                    (6, 1, 7),
+                    Some(ElemType::A),
+                    None,
+                    vec![],
+                    false,
+                )),))
             )))
         );
         assert_eq!(parser.pos(), (9, 1, 10));
@@ -1150,7 +1134,7 @@ mod tests {
             res,
             Ok(Selector::PseudoClass(PseudoClassSelector::new(
                 (0, 1, 1),
-                PseudoClassSelectorType::Not(vec![
+                PseudoClassSelectorType::Not(Box::new(Selector::Group(vec![
                     Selector::Simple(SimpleSelector::new(
                         (6, 1, 7),
                         Some(ElemType::A),
@@ -1164,7 +1148,7 @@ mod tests {
                         None,
                         false,
                     )),
-                ])
+                ])))
             )))
         );
         assert_eq!(parser.pos(), (18, 1, 19));
@@ -1176,12 +1160,27 @@ mod tests {
         let res = parser.parse_pseudo_class_selector();
         assert_eq!(
             res,
-            Err(SelectorParserError::Unexpected(
-                (8, 1, 9),
-                "expected ')', got '['".to_string()
-            ))
+            Ok(Selector::PseudoClass(PseudoClassSelector::new(
+                (0, 1, 1),
+                PseudoClassSelectorType::Not(Box::new(Selector::Combinator(
+                    Box::new(Selector::Simple(SimpleSelector::new(
+                        (6, 1, 7),
+                        Some(ElemType::A),
+                        None,
+                        vec![],
+                        false
+                    ))),
+                    Combinator::Descendant((7, 1, 8)),
+                    Box::new(Selector::Attr(AttrSelector::new(
+                        (8, 1, 9),
+                        Token::AttrIdentifier((9, 1, 10), "href".to_string()),
+                        None,
+                        false,
+                    )))
+                )))
+            )))
         );
-        assert_eq!(parser.pos(), (8, 1, 9));
+        assert_eq!(parser.pos(), (16, 1, 17));
     }
 
     #[test]
@@ -1616,7 +1615,7 @@ mod tests {
                     Some(ElemType::Div),
                     None,
                     vec![],
-                    false
+                    false,
                 )))
             ))
         );
@@ -1643,7 +1642,7 @@ mod tests {
                     Some(ElemType::Div),
                     None,
                     vec![],
-                    false
+                    false,
                 )))
             ))
         );
@@ -1653,7 +1652,7 @@ mod tests {
     #[test]
     fn test_parse_selector_group1() {
         let mut parser = SelectorParser::new("div   div");
-        let res = parser.parse_selector_group();
+        let res = parser.parse_selector_list();
         assert_eq!(
             res,
             Ok(Selector::Combinator(
@@ -1670,7 +1669,7 @@ mod tests {
                     Some(ElemType::Div),
                     None,
                     vec![],
-                    false
+                    false,
                 )))
             ))
         );
@@ -1680,7 +1679,7 @@ mod tests {
     #[test]
     fn test_parse_selector_group2() {
         let mut parser = SelectorParser::new("div , div");
-        let res = parser.parse_selector_group();
+        let res = parser.parse_selector_list();
         assert_eq!(
             res,
             Ok(Selector::Group(vec![
