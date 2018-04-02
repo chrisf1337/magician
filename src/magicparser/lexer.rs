@@ -1,4 +1,4 @@
-use magicparser::common::Pos;
+use magicparser::Pos;
 use magicparser::error::{Error, Result};
 
 pub struct Lexer {

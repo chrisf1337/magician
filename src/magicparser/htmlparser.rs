@@ -1,7 +1,7 @@
-use magicparser::common::{ElemType, Pos, Token};
 use magicparser::error::{Error, Result};
 use magicparser::lexer::Lexer;
 use magicparser::parser::Parser;
+use magicparser::{ElemType, Pos, Token};
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct DomNode {
@@ -293,7 +293,7 @@ impl Parser<Error> for HtmlParser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use magicparser::common::DEFAULT_CARGO_MANIFEST_DIR;
+    use magicparser::DEFAULT_CARGO_MANIFEST_DIR;
     use std::env;
     use std::fs::File;
     use std::io::prelude::*;

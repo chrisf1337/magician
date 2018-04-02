@@ -1,7 +1,7 @@
-use magicparser::common::{ElemType, Pos, Token};
 use magicparser::error::Error;
 use magicparser::lexer::Lexer;
 use magicparser::parser::Parser;
+use magicparser::{ElemType, Pos, Token};
 use std::boxed::Box;
 use std::convert::From;
 use std::result;

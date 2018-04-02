@@ -1,6 +1,6 @@
-use magicparser::common::{Pos, Token};
 use magicparser::error::Error;
 use magicparser::lexer::Lexer;
+use magicparser::{Pos, Token};
 use std::convert::From;
 
 pub trait Parser<E: From<Error>> {

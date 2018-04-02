@@ -1,4 +1,4 @@
-use magicparser::common::Pos;
+use magicparser::Pos;
 use magicparser::error::{Error, Result};
 use magicparser::lexer::Lexer;
 use magicparser::parser::Parser;
@@ -189,8 +189,8 @@ impl Parser<Error> for CssParser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use magicparser::common::DEFAULT_CARGO_MANIFEST_DIR;
-    use magicparser::common::ElemType;
+    use magicparser::DEFAULT_CARGO_MANIFEST_DIR;
+    use magicparser::ElemType;
     use magicparser::selectorparser::*;
     use std::env;
     use std::fs::File;
