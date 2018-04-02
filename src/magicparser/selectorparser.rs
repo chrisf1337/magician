@@ -121,6 +121,7 @@ pub enum PseudoClassSelectorType {
     // experimental: HostContext,
     Lang(Token),
     Link,
+    Matches(Box<Selector>),
     Visited,
     Not(Box<Selector>),
     NthChild(NthExpr),
@@ -346,7 +347,7 @@ impl SelectorParser {
         Ok(token)
     }
 
-    fn parse_pcs_not_args(&mut self) -> Result<Box<Selector>> {
+    fn parse_pcs_selector_list_args(&mut self) -> Result<Box<Selector>> {
         self.lexer.parse_chars_strict("(")?;
         let selectors = self.parse_selector_list()?;
         self.lexer.parse_chars(")")?;
@@ -444,34 +445,38 @@ impl SelectorParser {
         match self.lexer.parse_chars_strict(":") {
             Ok(pos) => {
                 let sel_type = match self.parse_elem_identifier_strict()? {
-                    Token::ElemIdentifier(_, sel_name) => {
-                        match sel_name.to_ascii_lowercase().as_ref() {
-                            "active" => PseudoClassSelectorType::Active,
-                            "hover" => PseudoClassSelectorType::Hover,
-                            "lang" => PseudoClassSelectorType::Lang(self.parse_pcs_lang_args()?),
-                            "link" => PseudoClassSelectorType::Link,
-                            "not" => PseudoClassSelectorType::Not(self.parse_pcs_not_args()?),
-                            "nth-child" => {
-                                PseudoClassSelectorType::NthChild(self.parse_nth_pcs_args()?)
-                            }
-                            "nth-last-child" => {
-                                PseudoClassSelectorType::NthLastChild(self.parse_nth_pcs_args()?)
-                            }
-                            "nth-last-of-type" => {
-                                PseudoClassSelectorType::NthLastOfType(self.parse_nth_pcs_args()?)
-                            }
-                            "nth-of-type" => {
-                                PseudoClassSelectorType::NthOfType(self.parse_nth_pcs_args()?)
-                            }
-                            "visited" => PseudoClassSelectorType::Visited,
-                            _ => {
-                                return Err(SelectorParserError::Unexpected(
-                                    pos,
-                                    format!("unsupported pseudo-class selector: ::{}", sel_name),
-                                ))
-                            }
+                    Token::ElemIdentifier(_, sel_name) => match sel_name
+                        .to_ascii_lowercase()
+                        .as_ref()
+                    {
+                        "active" => PseudoClassSelectorType::Active,
+                        "hover" => PseudoClassSelectorType::Hover,
+                        "lang" => PseudoClassSelectorType::Lang(self.parse_pcs_lang_args()?),
+                        "link" => PseudoClassSelectorType::Link,
+                        "matches" => {
+                            PseudoClassSelectorType::Matches(self.parse_pcs_selector_list_args()?)
                         }
-                    }
+                        "not" => PseudoClassSelectorType::Not(self.parse_pcs_selector_list_args()?),
+                        "nth-child" => {
+                            PseudoClassSelectorType::NthChild(self.parse_nth_pcs_args()?)
+                        }
+                        "nth-last-child" => {
+                            PseudoClassSelectorType::NthLastChild(self.parse_nth_pcs_args()?)
+                        }
+                        "nth-last-of-type" => {
+                            PseudoClassSelectorType::NthLastOfType(self.parse_nth_pcs_args()?)
+                        }
+                        "nth-of-type" => {
+                            PseudoClassSelectorType::NthOfType(self.parse_nth_pcs_args()?)
+                        }
+                        "visited" => PseudoClassSelectorType::Visited,
+                        _ => {
+                            return Err(SelectorParserError::Unexpected(
+                                pos,
+                                format!("unsupported pseudo-class selector: ::{}", sel_name),
+                            ))
+                        }
+                    },
                     _ => unreachable!(),
                 };
                 Ok(Selector::PseudoClass(PseudoClassSelector::new(
@@ -1185,7 +1190,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_pcs_not_fail1() {
+    fn test_parse_pcs_not3() {
         let mut parser = SelectorParser::new(":not( a [href] )");
         let res = parser.parse_pseudo_class_selector();
         assert_eq!(
@@ -1211,6 +1216,42 @@ mod tests {
             )))
         );
         assert_eq!(parser.pos(), (16, 1, 17));
+    }
+
+    #[test]
+    fn test_parse_pcs_matches1() {
+        let mut parser = SelectorParser::new(":matches(a, #id, .cl)");
+        let res = parser.parse_pseudo_class_selector();
+        assert_eq!(
+            res,
+            Ok(Selector::PseudoClass(PseudoClassSelector::new(
+                (0, 1, 1),
+                PseudoClassSelectorType::Matches(Box::new(Selector::Group(vec![
+                    Selector::Simple(SimpleSelector::new(
+                        (9, 1, 10),
+                        Some(ElemType::A),
+                        None,
+                        vec![],
+                        false,
+                    )),
+                    Selector::Simple(SimpleSelector::new(
+                        (12, 1, 13),
+                        None,
+                        Some(Token::AttrIdentifier((13, 1, 14), "id".to_string())),
+                        vec![],
+                        false,
+                    )),
+                    Selector::Simple(SimpleSelector::new(
+                        (17, 1, 18),
+                        None,
+                        None,
+                        vec![Token::AttrIdentifier((18, 1, 19), "cl".to_string())],
+                        false,
+                    )),
+                ])))
+            )))
+        );
+        assert_eq!(parser.pos(), (21, 1, 22));
     }
 
     #[test]
