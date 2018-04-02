@@ -98,7 +98,7 @@ impl CssParser {
         let mut value: Vec<char> = vec![];
         loop {
             match self.lexer.peek_char() {
-                Ok((_, ch)) => if ch != ';' {
+                Ok((_, ch)) => if ch != ';' && ch != '}' {
                     value.push(ch);
                     self.lexer.consume_char()?;
                 } else {
@@ -110,7 +110,10 @@ impl CssParser {
         if value.is_empty() {
             Err(Error::Unexpected(start_pos, "expected value".to_string()))
         } else {
-            Ok(Token::Value(start_pos, value.into_iter().collect()))
+            Ok(Token::Value(
+                start_pos,
+                value.into_iter().collect::<String>().trim().to_string(),
+            ))
         }
     }
 
@@ -124,11 +127,11 @@ impl CssParser {
             };
             self.lexer.try_parse_chars(":")?;
             let value = self.parse_value()?;
+            declarations.push((property, value));
             match self.lexer.try_parse_chars(";") {
                 Ok(_) => (),
                 Err(_) => break,
             }
-            declarations.push((property, value));
         }
         match self.lexer.parse_chars("}") {
             Ok(_) => (),
@@ -231,7 +234,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_decl_block() {
+    fn test_parse_decl_block1() {
         let mut parser = CssParser::new("{ aa: bb; c: d; }");
         let res = parser.parse_decl_block();
         assert_eq!(
@@ -251,8 +254,91 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_decl_block_unclosed_block() {
+    fn test_parse_decl_block2() {
+        let mut parser = CssParser::new("{ aa: bb !important ; c: d }");
+        let res = parser.parse_decl_block();
+        assert_eq!(
+            res,
+            Ok(vec![
+                (
+                    Token::Property((2, 1, 3), "aa".to_string()),
+                    Token::Value((6, 1, 7), "bb !important".to_string()),
+                ),
+                (
+                    Token::Property((22, 1, 23), "c".to_string()),
+                    Token::Value((25, 1, 26), "d".to_string()),
+                ),
+            ])
+        );
+        assert_eq!(parser.pos(), (28, 1, 29));
+    }
+
+    #[test]
+    fn test_parse_decl_block_no_terminating_semicolon1() {
+        let mut parser = CssParser::new("{ aa: bb; c: d }");
+        let res = parser.parse_decl_block();
+        assert_eq!(
+            res,
+            Ok(vec![
+                (
+                    Token::Property((2, 1, 3), "aa".to_string()),
+                    Token::Value((6, 1, 7), "bb".to_string()),
+                ),
+                (
+                    Token::Property((10, 1, 11), "c".to_string()),
+                    Token::Value((13, 1, 14), "d".to_string()),
+                ),
+            ])
+        );
+        assert_eq!(parser.pos(), (16, 1, 17));
+    }
+
+    #[test]
+    fn test_parse_decl_block_no_terminating_semicolon2() {
+        let mut parser = CssParser::new("{ aa: bb}");
+        let res = parser.parse_decl_block();
+        assert_eq!(
+            res,
+            Ok(vec![
+                (
+                    Token::Property((2, 1, 3), "aa".to_string()),
+                    Token::Value((6, 1, 7), "bb".to_string()),
+                ),
+            ])
+        );
+        assert_eq!(parser.pos(), (9, 1, 10));
+    }
+
+    #[test]
+    fn test_parse_decl_block_value_is_trimmed() {
+        let mut parser = CssParser::new("{ aa: bb  \n }");
+        let res = parser.parse_decl_block();
+        assert_eq!(
+            res,
+            Ok(vec![
+                (
+                    Token::Property((2, 1, 3), "aa".to_string()),
+                    Token::Value((6, 1, 7), "bb".to_string()),
+                ),
+            ])
+        );
+        assert_eq!(parser.pos(), (13, 2, 3));
+    }
+
+    #[test]
+    fn test_parse_decl_block_unclosed_block1() {
         let mut parser = CssParser::new("{ aa: bb; c: d; ");
+        let res = parser.parse_decl_block();
+        assert_eq!(
+            res,
+            Err(Error::Unexpected((0, 1, 1), "unclosed block".to_string()))
+        );
+        assert_eq!(parser.pos(), (16, 1, 17));
+    }
+
+    #[test]
+    fn test_parse_decl_block_unclosed_block2() {
+        let mut parser = CssParser::new("{ aa: bb; c: d  ");
         let res = parser.parse_decl_block();
         assert_eq!(
             res,
