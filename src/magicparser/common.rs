@@ -1,5 +1,8 @@
 use std::convert::From;
 
+// For running outside of cargo
+pub static DEFAULT_CARGO_MANIFEST_DIR: &'static str = "/Users/chrisf/projects/magician";
+
 pub type Pos = (usize, usize, usize); // index, row, col
 
 #[derive(Debug, Eq, PartialEq, Clone)]

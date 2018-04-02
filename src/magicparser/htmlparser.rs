@@ -293,6 +293,7 @@ impl Parser<Error> for HtmlParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use magicparser::common::DEFAULT_CARGO_MANIFEST_DIR;
     use std::env;
     use std::fs::File;
     use std::io::prelude::*;
@@ -320,7 +321,7 @@ mod tests {
 
     #[test]
     fn test_parse_tag_attributes_multiple_value_types() {
-        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap())
+        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap_or(DEFAULT_CARGO_MANIFEST_DIR.to_string()))
             .join("src/magicparser/htmlparser_tests");
         let mut f = File::open(test_dir.join("parse_tag_attributes_multiple_value_types.html"))
             .expect("file not found");
@@ -350,7 +351,7 @@ mod tests {
 
     #[test]
     fn test_parse_tag_attributes_whitespace() {
-        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap())
+        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap_or(DEFAULT_CARGO_MANIFEST_DIR.to_string()))
             .join("src/magicparser/htmlparser_tests");
         let mut f = File::open(test_dir.join("parse_tag_attributes_whitespace.html"))
             .expect("file not found");
@@ -928,7 +929,7 @@ mod tests {
 
     #[test]
     fn test_parse_with_doctype() {
-        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap())
+        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap_or(DEFAULT_CARGO_MANIFEST_DIR.to_string()))
             .join("src/magicparser/htmlparser_tests");
         let mut f = File::open(test_dir.join("simple.html")).expect("file not found");
         let mut input = String::new();

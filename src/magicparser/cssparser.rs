@@ -186,6 +186,7 @@ impl Parser<Error> for CssParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use magicparser::common::DEFAULT_CARGO_MANIFEST_DIR;
     use magicparser::common::ElemType;
     use magicparser::selectorparser::*;
     use std::env;
@@ -309,7 +310,7 @@ mod tests {
 
     #[test]
     fn test_simple1() {
-        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap())
+        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap_or(DEFAULT_CARGO_MANIFEST_DIR.to_string()))
             .join("src/magicparser/cssparser_tests");
         let mut f = File::open(test_dir.join("simple.css")).expect("file not found");
         let mut input = String::new();
@@ -351,7 +352,7 @@ mod tests {
 
     #[test]
     fn test_simple2() {
-        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap())
+        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap_or(DEFAULT_CARGO_MANIFEST_DIR.to_string()))
             .join("src/magicparser/cssparser_tests");
         let mut f = File::open(test_dir.join("simple.css")).expect("file not found");
         let mut input = String::new();
