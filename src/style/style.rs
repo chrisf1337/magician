@@ -1,8 +1,8 @@
-use magicparser::htmlparser::ParserDomNode;
+use magicparser::DomNode;
 use magicparser::selectorparser::{Selector, SimpleSelector};
 
 fn matches_simple_selector(
-    dom_node: &ParserDomNode,
+    dom_node: &DomNode,
     SimpleSelector {
         elem_type,
         id,
@@ -22,14 +22,14 @@ fn matches_simple_selector(
         },
         None => (),
     }
-    false
     // match id {
     //     &Some(ref id) => if *id == dom_node.id { return true; } else { () },
     //     None => (),
     // }
+    false
 }
 
-fn matches(dom_node: &ParserDomNode, selector: &Selector) -> bool {
+fn matches(dom_node: &DomNode, selector: &Selector) -> bool {
     match selector {
         &Selector::Simple(ref simple_sel) => matches_simple_selector(dom_node, simple_sel),
         _ => unimplemented!(),

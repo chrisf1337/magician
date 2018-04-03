@@ -172,12 +172,6 @@ pub enum Selector {
     Group(Vec<Selector>), // comma-separated group
 }
 
-// impl Selector {
-//     pub fn specificity(&self) -> (u32, u32, u32) {
-
-//     }
-// }
-
 pub struct SelectorParser {
     lexer: Lexer,
 }

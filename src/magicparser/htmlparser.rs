@@ -2,102 +2,28 @@ use magicparser::error::{Error, Result};
 use magicparser::lexer::Lexer;
 use magicparser::parser::Parser;
 use magicparser::{ElemType, Pos, Token};
-use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Eq, PartialEq, Clone)]
-pub struct ParserDomNode {
+pub struct DomNode {
     pub pos: Pos,
     pub elem_type: ElemType,
     pub attrs: Vec<(Token, Option<Token>)>, // (AttrIdentifier, Value) or (AttrIdentifier, Str)
-    pub children: Vec<ParserDomNode>,
+    pub children: Vec<DomNode>,
 }
 
-impl ParserDomNode {
-    fn new(
+impl DomNode {
+    pub fn new(
         pos: Pos,
         elem_type: ElemType,
         attrs: Vec<(Token, Option<Token>)>,
-        children: Vec<ParserDomNode>,
-    ) -> ParserDomNode {
-        ParserDomNode {
+        children: Vec<DomNode>,
+    ) -> DomNode {
+        DomNode {
             pos,
             elem_type,
             attrs,
             children,
         }
-    }
-}
-
-#[derive(Debug, Eq, PartialEq, Clone)]
-pub struct DomNode {
-    pub elem_type: ElemType,
-    pub id: Option<String>,
-    pub classes: HashSet<String>,
-    pub attrs: HashMap<String, Option<String>>,
-    pub children: Vec<DomNode>,
-}
-
-impl DomNode {
-    fn new(
-        elem_type: ElemType,
-        id: Option<String>,
-        classes: HashSet<String>,
-        attrs: HashMap<String, Option<String>>,
-        children: Vec<DomNode>,
-    ) -> DomNode {
-        DomNode {
-            elem_type,
-            id,
-            classes,
-            attrs,
-            children,
-        }
-    }
-}
-
-impl From<ParserDomNode> for DomNode {
-    fn from(
-        ParserDomNode {
-            elem_type,
-            attrs,
-            children,
-            ..
-        }: ParserDomNode,
-    ) -> Self {
-        let mut id: Option<String> = None;
-        let mut classes: HashSet<String> = HashSet::new();
-        let mut deduped_attrs: HashMap<String, Option<String>> = HashMap::new();
-        for &(ref attr, ref val) in attrs.iter() {
-            let value = match val {
-                Some(Token::Value(_, ref value_str)) => Some(value_str.to_string()),
-                Some(Token::Str(_, ref value_str)) => Some(value_str.to_string()),
-                _ => None,
-            };
-            if let Token::AttrIdentifier(_, attr_str) = attr {
-                if !deduped_attrs.contains_key(attr_str) {
-                    deduped_attrs.insert(attr_str.to_string(), value);
-                }
-            }
-        }
-        for (&ref attr, &ref value) in deduped_attrs.iter() {
-            match attr.as_ref() {
-                "id" => id = value.clone(),
-                "class" => if let Some(value) = value {
-                    classes.extend(value.split_whitespace().map(|s| s.to_string()))
-                },
-                _ => (),
-            }
-        }
-        DomNode::new(
-            elem_type,
-            id,
-            classes,
-            deduped_attrs,
-            children
-                .iter()
-                .map(|&ref child| DomNode::from(child.clone()))
-                .collect(),
-        )
     }
 }
 
@@ -193,7 +119,7 @@ impl HtmlParser {
         }
     }
 
-    fn parse_opening_tag(&mut self) -> Result<ParserDomNode> {
+    fn parse_opening_tag(&mut self) -> Result<DomNode> {
         let tag_start_pos = self.lexer.try_parse_one_char('<')?;
         let tag_id = match self.parse_elem_identifier_strict() {
             Ok(tag_id) => tag_id,
@@ -219,7 +145,7 @@ impl HtmlParser {
                     }
                 },
             };
-            Ok(ParserDomNode::new(tag_start_pos, elem_type, attrs, vec![]))
+            Ok(DomNode::new(tag_start_pos, elem_type, attrs, vec![]))
         } else {
             let attrs = self.parse_tag_attributes()?;
             match self.lexer.try_parse_one_char('>') {
@@ -231,11 +157,11 @@ impl HtmlParser {
                     ));
                 }
             };
-            Ok(ParserDomNode::new(tag_start_pos, elem_type, attrs, vec![]))
+            Ok(DomNode::new(tag_start_pos, elem_type, attrs, vec![]))
         }
     }
 
-    fn parse_closing_tag(&mut self, opening_tag: ParserDomNode) -> Result<ParserDomNode> {
+    fn parse_closing_tag(&mut self, opening_tag: DomNode) -> Result<DomNode> {
         let tag_start_pos = self.lexer.try_parse_one_char('<')?;
         let _ = self.lexer.try_parse_one_char_strict('/')?;
         let tag_id = self.parse_elem_identifier_strict()?;
@@ -256,7 +182,7 @@ impl HtmlParser {
         Ok(opening_tag)
     }
 
-    fn parse_text_node(&mut self) -> Result<ParserDomNode> {
+    fn parse_text_node(&mut self) -> Result<DomNode> {
         let start_pos = self.pos();
         let mut text: Vec<char> = vec![];
         loop {
@@ -274,16 +200,11 @@ impl HtmlParser {
         if s.len() == 0 {
             Err(Error::Unexpected(self.pos(), "empty text node".to_string()))
         } else {
-            Ok(ParserDomNode::new(
-                start_pos,
-                ElemType::Text(s),
-                vec![],
-                vec![],
-            ))
+            Ok(DomNode::new(start_pos, ElemType::Text(s), vec![], vec![]))
         }
     }
 
-    fn parse_node(&mut self) -> Result<ParserDomNode> {
+    fn parse_node(&mut self) -> Result<DomNode> {
         let mut node = match self.try(HtmlParser::parse_text_node) {
             Ok(node) => node,
             Err(_) => match self.try(HtmlParser::parse_opening_tag) {
@@ -355,7 +276,7 @@ impl HtmlParser {
         }
     }
 
-    pub fn parse(input: &str) -> Result<ParserDomNode> {
+    pub fn parse(input: &str) -> Result<DomNode> {
         let mut parser = HtmlParser::new(input);
         let _ = parser.try(HtmlParser::parse_doctype);
         let node = parser.parse_node()?;
@@ -595,12 +516,7 @@ mod tests {
         let res = parser.parse_opening_tag();
         assert_eq!(
             res,
-            Ok(ParserDomNode::new(
-                (0, 1, 1),
-                ElemType::Html,
-                vec![],
-                vec![]
-            ),)
+            Ok(DomNode::new((0, 1, 1), ElemType::Html, vec![], vec![]),)
         );
         assert_eq!(parser.pos(), (6, 1, 7));
     }
@@ -611,7 +527,7 @@ mod tests {
         let res = parser.parse_opening_tag();
         assert_eq!(
             res,
-            Ok(ParserDomNode::new(
+            Ok(DomNode::new(
                 (0, 1, 1),
                 ElemType::Html,
                 vec![
@@ -632,7 +548,7 @@ mod tests {
         let res = parser.parse_opening_tag();
         assert_eq!(
             res,
-            Ok(ParserDomNode::new(
+            Ok(DomNode::new(
                 (0, 1, 1),
                 ElemType::Html,
                 vec![
@@ -695,12 +611,7 @@ mod tests {
         let res = parser.parse_node();
         assert_eq!(
             res,
-            Ok(ParserDomNode::new(
-                (0, 1, 1),
-                ElemType::Html,
-                vec![],
-                vec![]
-            ),)
+            Ok(DomNode::new((0, 1, 1), ElemType::Html, vec![], vec![]),)
         );
         assert_eq!(parser.pos(), (13, 1, 14));
     }
@@ -730,7 +641,7 @@ mod tests {
                 (0, 1, 1),
                 format!(
                     "unclosed element: {:?}",
-                    ParserDomNode::new((0, 1, 1), ElemType::Html, vec![], vec![])
+                    DomNode::new((0, 1, 1), ElemType::Html, vec![], vec![])
                 ).to_string()
             ))
         );
@@ -747,7 +658,7 @@ mod tests {
                 (0, 1, 1),
                 format!(
                     "unclosed element: {:?}",
-                    ParserDomNode::new((0, 1, 1), ElemType::Html, vec![], vec![])
+                    DomNode::new((0, 1, 1), ElemType::Html, vec![], vec![])
                 )
             ))
         );
@@ -762,12 +673,12 @@ mod tests {
         let res = parser.parse_node();
         assert_eq!(
             res,
-            Ok(ParserDomNode::new(
+            Ok(DomNode::new(
                 (0, 1, 1),
                 ElemType::Html,
                 vec![],
                 vec![
-                    ParserDomNode::new(
+                    DomNode::new(
                         (6, 1, 7),
                         ElemType::Text("hello".to_string()),
                         vec![],
@@ -785,12 +696,12 @@ mod tests {
         let res = parser.parse_node();
         assert_eq!(
             res,
-            Ok(ParserDomNode::new(
+            Ok(DomNode::new(
                 (0, 1, 1),
                 ElemType::Html,
                 vec![],
                 vec![
-                    ParserDomNode::new(
+                    DomNode::new(
                         (7, 1, 8),
                         ElemType::Text("hello".to_string()),
                         vec![],
@@ -808,18 +719,18 @@ mod tests {
         let res = parser.parse_node();
         assert_eq!(
             res,
-            Ok(ParserDomNode::new(
+            Ok(DomNode::new(
                 (0, 1, 1),
                 ElemType::Html,
                 vec![],
                 vec![
-                    ParserDomNode::new(
+                    DomNode::new(
                         (7, 1, 8),
                         ElemType::Text("hello hello".to_string()),
                         vec![],
                         vec![],
                     ),
-                    ParserDomNode::new((19, 1, 20), ElemType::Body, vec![], vec![]),
+                    DomNode::new((19, 1, 20), ElemType::Body, vec![], vec![]),
                 ]
             ),)
         );
@@ -832,12 +743,12 @@ mod tests {
         let res = parser.parse_node();
         assert_eq!(
             res,
-            Ok(ParserDomNode::new(
+            Ok(DomNode::new(
                 (0, 1, 1),
                 ElemType::Html,
                 vec![],
                 vec![
-                    ParserDomNode::new(
+                    DomNode::new(
                         (8, 1, 9),
                         ElemType::Body,
                         vec![
@@ -864,7 +775,7 @@ mod tests {
         let res = parser.parse_node();
         assert_eq!(
             res,
-            Ok(ParserDomNode::new(
+            Ok(DomNode::new(
                 (0, 1, 1),
                 ElemType::Div,
                 vec![
@@ -903,7 +814,7 @@ mod tests {
                 (0, 1, 1),
                 format!(
                     "unclosed element: {:?}",
-                    ParserDomNode::new((0, 1, 1), ElemType::Html, vec![], vec![])
+                    DomNode::new((0, 1, 1), ElemType::Html, vec![], vec![])
                 )
             ))
         );
@@ -954,12 +865,7 @@ mod tests {
         let res = parser.parse_node();
         assert_eq!(
             res,
-            Ok(ParserDomNode::new(
-                (0, 1, 1),
-                ElemType::Html,
-                vec![],
-                vec![]
-            ))
+            Ok(DomNode::new((0, 1, 1), ElemType::Html, vec![], vec![]))
         );
         assert_eq!(parser.pos(), (21, 1, 22));
     }
@@ -970,7 +876,7 @@ mod tests {
         let res = parser.parse_opening_tag();
         assert_eq!(
             res,
-            Ok(ParserDomNode::new(
+            Ok(DomNode::new(
                 (0, 1, 1),
                 ElemType::Img,
                 vec![
@@ -991,7 +897,7 @@ mod tests {
         let res = parser.parse_opening_tag();
         assert_eq!(
             res,
-            Ok(ParserDomNode::new(
+            Ok(DomNode::new(
                 (0, 1, 1),
                 ElemType::Img,
                 vec![
@@ -1027,7 +933,7 @@ mod tests {
         let res = parser.parse_opening_tag();
         assert_eq!(
             res,
-            Ok(ParserDomNode::new(
+            Ok(DomNode::new(
                 (7, 1, 8),
                 ElemType::Img,
                 vec![
@@ -1052,22 +958,22 @@ mod tests {
         let res = HtmlParser::parse(&input);
         assert_eq!(
             res,
-            Ok(ParserDomNode::new(
+            Ok(DomNode::new(
                 (16, 2, 1),
                 ElemType::Html,
                 vec![],
                 vec![
-                    ParserDomNode::new(
+                    DomNode::new(
                         (23, 3, 1),
                         ElemType::Body,
                         vec![],
                         vec![
-                            ParserDomNode::new(
+                            DomNode::new(
                                 (31, 5, 1),
                                 ElemType::H1,
                                 vec![],
                                 vec![
-                                    ParserDomNode::new(
+                                    DomNode::new(
                                         (35, 5, 5),
                                         ElemType::Text("My First Heading".to_string()),
                                         vec![],
@@ -1075,7 +981,7 @@ mod tests {
                                     ),
                                 ],
                             ),
-                            ParserDomNode::new(
+                            DomNode::new(
                                 (57, 6, 1),
                                 ElemType::A,
                                 vec![
@@ -1088,7 +994,7 @@ mod tests {
                                     ),
                                 ],
                                 vec![
-                                    ParserDomNode::new(
+                                    DomNode::new(
                                         (88, 6, 32),
                                         ElemType::Text("Link".to_string()),
                                         vec![],
@@ -1096,12 +1002,12 @@ mod tests {
                                     ),
                                 ],
                             ),
-                            ParserDomNode::new(
+                            DomNode::new(
                                 (97, 7, 1),
                                 ElemType::P,
                                 vec![],
                                 vec![
-                                    ParserDomNode::new(
+                                    DomNode::new(
                                         (100, 7, 4),
                                         ElemType::Text("My first paragraph.".to_string()),
                                         vec![],
@@ -1126,22 +1032,22 @@ mod tests {
         let res = HtmlParser::parse(&input);
         assert_eq!(
             res,
-            Ok(ParserDomNode::new(
+            Ok(DomNode::new(
                 (16, 2, 1),
                 ElemType::Html,
                 vec![],
                 vec![
-                    ParserDomNode::new(
+                    DomNode::new(
                         (23, 3, 1),
                         ElemType::Body,
                         vec![],
                         vec![
-                            ParserDomNode::new(
+                            DomNode::new(
                                 (31, 5, 1),
                                 ElemType::H1,
                                 vec![],
                                 vec![
-                                    ParserDomNode::new(
+                                    DomNode::new(
                                         (38, 8, 2),
                                         ElemType::Text("My First Heading".to_string()),
                                         vec![],
@@ -1149,7 +1055,7 @@ mod tests {
                                     ),
                                 ],
                             ),
-                            ParserDomNode::new(
+                            DomNode::new(
                                 (62, 11, 1),
                                 ElemType::A,
                                 vec![
@@ -1162,7 +1068,7 @@ mod tests {
                                     ),
                                 ],
                                 vec![
-                                    ParserDomNode::new(
+                                    DomNode::new(
                                         (98, 16, 2),
                                         ElemType::Text("Link".to_string()),
                                         vec![],
@@ -1170,12 +1076,12 @@ mod tests {
                                     ),
                                 ],
                             ),
-                            ParserDomNode::new(
+                            DomNode::new(
                                 (108, 18, 1),
                                 ElemType::P,
                                 vec![],
                                 vec![
-                                    ParserDomNode::new(
+                                    DomNode::new(
                                         (113, 20, 2),
                                         ElemType::Text("My first paragraph.".to_string()),
                                         vec![],
@@ -1188,80 +1094,5 @@ mod tests {
                 ]
             ))
         );
-    }
-
-    #[test]
-    fn test_convert_to_domnode1() {
-        let parser_dom_node = ParserDomNode::new(
-            (0, 1, 1),
-            ElemType::A,
-            vec![
-                (
-                    Token::AttrIdentifier((0, 1, 1), "id".to_string()),
-                    Some(Token::Value((0, 1, 1), "a".to_string())),
-                ),
-                (
-                    Token::AttrIdentifier((0, 1, 1), "attr".to_string()),
-                    Some(Token::Value((0, 1, 1), "val".to_string())),
-                ),
-                (
-                    Token::AttrIdentifier((0, 1, 1), "class".to_string()),
-                    Some(Token::Str((0, 1, 1), "cl1 cl2".to_string())),
-                ),
-                (
-                    Token::AttrIdentifier((0, 1, 1), "another-attr".to_string()),
-                    None,
-                ),
-                (Token::AttrIdentifier((0, 1, 1), "class".to_string()), None),
-                (
-                    Token::AttrIdentifier((0, 1, 1), "id".to_string()),
-                    Some(Token::Value((0, 1, 1), "b".to_string())),
-                ),
-            ],
-            vec![
-                ParserDomNode::new(
-                    (0, 1, 1),
-                    ElemType::Text("text".to_string()),
-                    vec![],
-                    vec![],
-                ),
-                ParserDomNode::new(
-                    (0, 1, 1),
-                    ElemType::Custom("custom".to_string()),
-                    vec![],
-                    vec![],
-                ),
-            ],
-        );
-        assert_eq!(
-            DomNode::from(parser_dom_node),
-            DomNode::new(
-                ElemType::A,
-                Some("a".to_string()),
-                hashset! { "cl1".to_string(), "cl2".to_string() },
-                hashmap! {
-                    "id".to_string() => Some("a".to_string()),
-                    "class".to_string() => Some("cl1 cl2".to_string()),
-                    "attr".to_string() => Some("val".to_string()),
-                    "another-attr".to_string() => None
-                },
-                vec![
-                    DomNode::new(
-                        ElemType::Text("text".to_string()),
-                        None,
-                        HashSet::new(),
-                        HashMap::new(),
-                        vec![],
-                    ),
-                    DomNode::new(
-                        ElemType::Custom("custom".to_string()),
-                        None,
-                        HashSet::new(),
-                        HashMap::new(),
-                        vec![],
-                    ),
-                ]
-            )
-        )
     }
 }
