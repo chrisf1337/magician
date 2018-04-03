@@ -928,7 +928,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_with_doctype() {
+    fn test_simple() {
         let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap_or(DEFAULT_CARGO_MANIFEST_DIR.to_string()))
             .join("src/magicparser/htmlparser_tests");
         let mut f = File::open(test_dir.join("simple.html")).expect("file not found");
@@ -988,6 +988,80 @@ mod tests {
                                 vec![
                                     DomNode::new(
                                         (100, 7, 4),
+                                        ElemType::Text("My first paragraph.".to_string()),
+                                        vec![],
+                                        vec![],
+                                    ),
+                                ],
+                            ),
+                        ],
+                    ),
+                ]
+            ))
+        );
+    }
+
+    #[test]
+    fn test_simple2() {
+        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap_or(DEFAULT_CARGO_MANIFEST_DIR.to_string()))
+            .join("src/magicparser/htmlparser_tests");
+        let mut f = File::open(test_dir.join("simple_whitespace.html")).expect("file not found");
+        let mut input = String::new();
+        f.read_to_string(&mut input).expect("read");
+        let res = HtmlParser::parse(&input);
+        assert_eq!(
+            res,
+            Ok(DomNode::new(
+                (16, 2, 1),
+                ElemType::Html,
+                vec![],
+                vec![
+                    DomNode::new(
+                        (23, 3, 1),
+                        ElemType::Body,
+                        vec![],
+                        vec![
+                            DomNode::new(
+                                (31, 5, 1),
+                                ElemType::H1,
+                                vec![],
+                                vec![
+                                    DomNode::new(
+                                        (38, 8, 2),
+                                        ElemType::Text("My First Heading".to_string()),
+                                        vec![],
+                                        vec![],
+                                    ),
+                                ],
+                            ),
+                            DomNode::new(
+                                (62, 11, 1),
+                                ElemType::A,
+                                vec![
+                                    (
+                                        Token::AttrIdentifier((66, 13, 1), "href".to_string()),
+                                        Some(Token::Value(
+                                            (73, 14, 1),
+                                            "https://www.google.com".to_string(),
+                                        )),
+                                    ),
+                                ],
+                                vec![
+                                    DomNode::new(
+                                        (98, 16, 2),
+                                        ElemType::Text("Link".to_string()),
+                                        vec![],
+                                        vec![],
+                                    ),
+                                ],
+                            ),
+                            DomNode::new(
+                                (108, 18, 1),
+                                ElemType::P,
+                                vec![],
+                                vec![
+                                    DomNode::new(
+                                        (113, 20, 2),
                                         ElemType::Text("My first paragraph.".to_string()),
                                         vec![],
                                         vec![],

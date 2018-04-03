@@ -32,7 +32,7 @@ impl CssParser {
         let mut selector: Vec<char> = vec![];
         loop {
             match self.lexer.peek_char() {
-                Ok((_, ch)) => if ch != '{' && ch != '\n' && ch != ';' {
+                Ok((_, ch)) => if ch != '{' && ch != ';' {
                     selector.push(ch);
                     self.lexer.consume_char()?;
                 } else {
@@ -524,6 +524,102 @@ mod tests {
                         (
                             Token::Property((112, 8, 3), "background-color".to_string()),
                             Token::Value((130, 8, 21), "red".to_string()),
+                        ),
+                    ],
+                ),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_simple_whitespace() {
+        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap_or(DEFAULT_CARGO_MANIFEST_DIR.to_string()))
+            .join("src/magicparser/cssparser_tests");
+        let mut f = File::open(test_dir.join("simple_whitespace.css")).expect("file not found");
+        let mut input = String::new();
+        f.read_to_string(&mut input).expect("read");
+        let res = CssParser::parse(&input);
+        assert_eq!(
+            res,
+            Ok(vec![
+                (
+                    Selector::Combinator(
+                        Box::new(Selector::Seq(vec![
+                            Selector::Simple(SimpleSelector::new(
+                                (0, 1, 1),
+                                Some(ElemType::A),
+                                None,
+                                vec![],
+                                false,
+                            )),
+                            Selector::PseudoClass(PseudoClassSelector::new(
+                                (1, 1, 2),
+                                PseudoClassSelectorType::Link,
+                            )),
+                        ])),
+                        Combinator::Descendant((6, 1, 7)),
+                        Box::new(Selector::Seq(vec![
+                            Selector::Simple(SimpleSelector::new(
+                                (11, 4, 3),
+                                Some(ElemType::A),
+                                None,
+                                vec![],
+                                false,
+                            )),
+                            Selector::PseudoClass(PseudoClassSelector::new(
+                                (12, 4, 4),
+                                PseudoClassSelectorType::Visited,
+                            )),
+                        ])),
+                    ),
+                    vec![
+                        (
+                            Token::Property((26, 7, 3), "background-color".to_string()),
+                            Token::Value((44, 7, 21), "#f44336".to_string()),
+                        ),
+                        (
+                            Token::Property((56, 9, 3), "color".to_string()),
+                            Token::Value((63, 9, 10), "white".to_string()),
+                        ),
+                        (
+                            Token::Property((72, 10, 3), "padding".to_string()),
+                            Token::Value((81, 10, 12), "14px 25px".to_string()),
+                        ),
+                    ],
+                ),
+                (
+                    Selector::Group(vec![
+                        Selector::Seq(vec![
+                            Selector::Simple(SimpleSelector::new(
+                                (95, 14, 1),
+                                Some(ElemType::A),
+                                None,
+                                vec![],
+                                false,
+                            )),
+                            Selector::PseudoClass(PseudoClassSelector::new(
+                                (96, 14, 2),
+                                PseudoClassSelectorType::Hover,
+                            )),
+                        ]),
+                        Selector::Seq(vec![
+                            Selector::Simple(SimpleSelector::new(
+                                (107, 18, 1),
+                                Some(ElemType::A),
+                                None,
+                                vec![],
+                                false,
+                            )),
+                            Selector::PseudoClass(PseudoClassSelector::new(
+                                (108, 18, 2),
+                                PseudoClassSelectorType::Active,
+                            )),
+                        ]),
+                    ]),
+                    vec![
+                        (
+                            Token::Property((118, 18, 12), "background-color".to_string()),
+                            Token::Value((136, 18, 30), "red".to_string()),
                         ),
                     ],
                 ),

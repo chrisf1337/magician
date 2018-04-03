@@ -172,6 +172,12 @@ pub enum Selector {
     Group(Vec<Selector>), // comma-separated group
 }
 
+// impl Selector {
+//     pub fn specificity(&self) -> (u32, u32, u32) {
+
+//     }
+// }
+
 pub struct SelectorParser {
     lexer: Lexer,
 }
@@ -415,7 +421,7 @@ impl SelectorParser {
                     }
                 }
             } else if ch == 'e' || ch == 'o' {
-                match self.lexer.parse_chars_list_strict(vec!["even", "odd"]) {
+                match self.lexer.try_parse_chars_list_strict(vec!["even", "odd"]) {
                     Ok((_, st)) => match st.as_ref() {
                         "even" => Ok(NthExpr::Even(start_pos)),
                         "odd" => Ok(NthExpr::Odd(start_pos)),
@@ -551,8 +557,8 @@ impl SelectorParser {
                 ">" => Ok(Child(pos)),
                 _ => unreachable!(),
             },
-            Err(_) => match self.lexer.parse_chars_strict(" ") {
-                Ok(pos) => Ok(Descendant(pos)),
+            Err(_) => match self.lexer.try_parse_chars_list_strict(vec![" ", "\n"]) {
+                Ok((pos, _)) => Ok(Descendant(pos)),
                 Err(_) => Err(SelectorParserError::Unexpected(
                     start_pos,
                     "expected combinator".to_string(),
@@ -563,6 +569,7 @@ impl SelectorParser {
 
     fn parse_selector(&mut self) -> Result<Selector> {
         let sel1 = self.parse_selector_seq()?;
+        println!("sel1: {:?}", sel1);
         let pos = self.pos();
         match self.parse_combinator() {
             Ok(combinator) => {
@@ -1755,6 +1762,60 @@ mod tests {
             ))
         );
         assert_eq!(parser.pos(), (15, 1, 16));
+    }
+
+    #[test]
+    fn test_parse_selector_newline1() {
+        let mut parser = SelectorParser::new("div\ndiv");
+        let res = parser.parse_selector();
+        assert_eq!(
+            res,
+            Ok(Selector::Combinator(
+                Box::new(Selector::Simple(SimpleSelector::new(
+                    (0, 1, 1),
+                    Some(ElemType::Div),
+                    None,
+                    vec![],
+                    false,
+                ))),
+                Combinator::Descendant((3, 1, 4)),
+                Box::new(Selector::Simple(SimpleSelector::new(
+                    (4, 2, 1),
+                    Some(ElemType::Div),
+                    None,
+                    vec![],
+                    false,
+                )))
+            ))
+        );
+        assert_eq!(parser.pos(), (7, 2, 4));
+    }
+
+    #[test]
+    fn test_parse_selector_newline2() {
+        let mut parser = SelectorParser::new("div \ndiv");
+        let res = parser.parse_selector();
+        assert_eq!(
+            res,
+            Ok(Selector::Combinator(
+                Box::new(Selector::Simple(SimpleSelector::new(
+                    (0, 1, 1),
+                    Some(ElemType::Div),
+                    None,
+                    vec![],
+                    false,
+                ))),
+                Combinator::Descendant((3, 1, 4)),
+                Box::new(Selector::Simple(SimpleSelector::new(
+                    (5, 2, 1),
+                    Some(ElemType::Div),
+                    None,
+                    vec![],
+                    false,
+                )))
+            ))
+        );
+        assert_eq!(parser.pos(), (8, 2, 4));
     }
 
     #[test]

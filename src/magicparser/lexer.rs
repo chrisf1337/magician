@@ -284,9 +284,9 @@ impl Lexer {
         self.try_parse_chars_strict(chars)
     }
 
-    pub fn parse_chars_list_strict(&mut self, chars_list: Vec<&str>) -> Result<(Pos, String)> {
+    pub fn try_parse_chars_list_strict(&mut self, chars_list: Vec<&str>) -> Result<(Pos, String)> {
         if chars_list.len() == 0 {
-            panic!("Cannot call parse_chars_list_strict() with empty list");
+            panic!("Cannot call try_parse_chars_list_strict() with empty list");
         }
         for &chars in chars_list.iter() {
             match self.try_parse_chars_strict(chars) {
@@ -302,7 +302,7 @@ impl Lexer {
 
     pub fn parse_chars_list(&mut self, chars_list: Vec<&str>) -> Result<(Pos, String)> {
         self.consume_whitespace()?;
-        self.parse_chars_list_strict(chars_list)
+        self.try_parse_chars_list_strict(chars_list)
     }
 
     pub fn try_parse_chars_list(&mut self, chars_list: Vec<&str>) -> Result<(Pos, String)> {
