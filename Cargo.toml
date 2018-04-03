@@ -7,3 +7,4 @@ authors = ["Christopher Fu <chrisf1337@gmail.com>"]
 
 [dev-dependencies]
 pretty_assertions = "*"
+maplit = "*"

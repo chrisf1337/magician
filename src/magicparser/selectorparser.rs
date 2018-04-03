@@ -163,11 +163,11 @@ pub enum Combinator {
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Selector {
-    Seq(Vec<Selector>),
     Simple(SimpleSelector),
     Attr(AttrSelector),
     PseudoClass(PseudoClassSelector),
     PseudoElement(PseudoElementSelector),
+    Seq(Vec<Selector>), // AND of selectors (e.g. a#id[href="www.example.com"]:visited )
     Combinator(Box<Selector>, Combinator, Box<Selector>),
     Group(Vec<Selector>), // comma-separated group
 }
