@@ -265,7 +265,7 @@ impl SelectorParser {
     fn parse_attr_selector(&mut self) -> Result<Selector> {
         let start_pos = self.pos();
         self.lexer.parse_chars_strict("[")?;
-        let attr = self.parse_attr_identifier()?.to_lowercase();
+        let attr = self.parse_attr_identifier()?;
         let op = match self.parse_attr_selector_op() {
             Ok(op) => Some(op),
             Err(SelectorParserError::Unexpected(..)) => None,
@@ -784,22 +784,6 @@ mod tests {
             )))
         );
         assert_eq!(parser.pos(), (11, 1, 12));
-    }
-
-    #[test]
-    fn test_parse_attr_selector_caps() {
-        let mut parser = SelectorParser::new("[ AbC ]");
-        let res = parser.parse_attr_selector();
-        assert_eq!(
-            res,
-            Ok(Selector::Attr(AttrSelector::new(
-                (0, 1, 1),
-                Token::AttrIdentifier((2, 1, 3), "abc".to_string()),
-                None,
-                false,
-            )))
-        );
-        assert_eq!(parser.pos(), (7, 1, 8));
     }
 
     #[test]

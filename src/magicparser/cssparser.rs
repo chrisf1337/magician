@@ -4,11 +4,14 @@ use magicparser::lexer::Lexer;
 use magicparser::parser::Parser;
 use magicparser::selectorparser::{Selector, SelectorParser};
 
-type DeclBlock = Vec<(Token, Token)>;
+pub type DeclBlock = Vec<(Token, Token)>;
 type IntermediateBlock = (Token, DeclBlock);
 type Block = (Selector, DeclBlock);
 
 #[derive(Debug, Eq, PartialEq)]
+pub struct CssBlocks(Vec<Block>);
+
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Token {
     Selector(Pos, String),
     Property(Pos, String),
@@ -159,7 +162,7 @@ impl CssParser {
         Ok(blocks)
     }
 
-    pub fn parse(input: &str) -> Result<Vec<Block>> {
+    pub fn parse(input: &str) -> Result<CssBlocks> {
         let mut parser = CssParser::new(input);
         let int_blocks = parser.parse_blocks()?;
         let mut blocks = vec![];
@@ -172,7 +175,7 @@ impl CssParser {
                 _ => unreachable!(),
             }
         }
-        Ok(blocks)
+        Ok(CssBlocks(blocks))
     }
 }
 
@@ -446,7 +449,7 @@ mod tests {
         let res = CssParser::parse(&input);
         assert_eq!(
             res,
-            Ok(vec![
+            Ok(CssBlocks(vec![
                 (
                     Selector::Group(vec![
                         Selector::Seq(vec![
@@ -515,7 +518,7 @@ mod tests {
                         ),
                     ],
                 ),
-            ])
+            ]))
         );
     }
 
@@ -529,7 +532,7 @@ mod tests {
         let res = CssParser::parse(&input);
         assert_eq!(
             res,
-            Ok(vec![
+            Ok(CssBlocks(vec![
                 (
                     Selector::Combinator(
                         Box::new(Selector::Seq(vec![
@@ -599,7 +602,7 @@ mod tests {
                         ),
                     ],
                 ),
-            ])
+            ]))
         );
     }
 }

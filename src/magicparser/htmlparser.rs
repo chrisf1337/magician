@@ -80,7 +80,7 @@ impl HtmlParser {
         loop {
             match self.parse_attr_identifier() {
                 Ok(Token::AttrIdentifier(pos, attr_str)) => {
-                    let attr_id = Token::AttrIdentifier(pos, attr_str.to_lowercase().to_string());
+                    let attr_id = Token::AttrIdentifier(pos, attr_str.to_string());
                     match self.lexer.try_parse_one_char('=') {
                         Ok(_) => {
                             let parsers: Vec<ParserFn<Token>> =
@@ -458,23 +458,6 @@ mod tests {
             ],)
         );
         assert_eq!(parser.pos(), (1, 1, 2));
-    }
-
-    #[test]
-    fn test_parse_tag_attributes_to_lowercase() {
-        let mut parser = HtmlParser::new("ID=a AtTr");
-        let res = parser.parse_tag_attributes();
-        assert_eq!(
-            res,
-            Ok(vec![
-                (
-                    Token::AttrIdentifier((0, 1, 1), "id".to_string()),
-                    Some(Token::Value((3, 1, 4), "a".to_string())),
-                ),
-                (Token::AttrIdentifier((5, 1, 6), "attr".to_string()), None),
-            ],)
-        );
-        assert_eq!(parser.pos(), (9, 1, 10));
     }
 
     #[test]

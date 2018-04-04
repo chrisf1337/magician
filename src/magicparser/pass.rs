@@ -1,3 +1,4 @@
+// use magicparser::cssparser::{Block, DeclBlock};
 use magicparser::htmlparser::DomNode as PDomNode;
 use magicparser::selectorparser::{AttrSelector as PAttrSelector,
                                   AttrSelectorOp as PAttrSelectorOp, Combinator as PCombinator,
@@ -51,11 +52,12 @@ impl From<PDomNode> for DomNode {
             let value = match val {
                 Some(Token::Value(_, ref value_str)) => Some(value_str.to_string()),
                 Some(Token::Str(_, ref value_str)) => Some(value_str.to_string()),
-                _ => None,
+                None => None,
+                _ => unreachable!(),
             };
             if let Token::AttrIdentifier(_, attr_str) = attr {
-                if !deduped_attrs.contains_key(attr_str) {
-                    deduped_attrs.insert(attr_str.to_string(), value);
+                if !deduped_attrs.contains_key(&attr_str.to_lowercase()) {
+                    deduped_attrs.insert(attr_str.to_lowercase().to_string(), value);
                 }
             }
         }
@@ -311,7 +313,7 @@ impl From<PSelector> for Selector {
                 case_insensitive,
                 ..
             }) => {
-                let attr = attr.to_string();
+                let attr = attr.to_lowercase().to_string();
                 let op_val = op_val.map(|(op, tok)| (AttrSelectorOp::from(op), tok.to_string()));
                 Selector::Attr(AttrSelector::new(attr, op_val, case_insensitive))
             }
@@ -328,6 +330,27 @@ impl From<PSelector> for Selector {
     }
 }
 
+// pub type CssBlocks = Vec<(Selector, HashMap<String, String>)>;
+
+// fn insert_decl_block(css_blocks: &mut CssBlocks, selector: &Selector, decl_block: &DeclBlock) {
+//     for &mut (css_bl_sel, css_bl_props) in css_blocks.iter_mut() {
+//         if css_bl_sel == *selector {
+//             for &(prop, val) in decl_block.iter() {
+//                 css_bl_props.insert(prop.clone(), val.clone());
+//             }
+//             break;
+//         }
+//     }
+// }
+
+// pub fn make_css_blocks(blocks: &Vec<Block>) -> CssBlocks {
+//     let mut css_blocks = vec![];
+//     // for &(selector, decl_block) in blocks.iter() {
+
+//     // }
+//     css_blocks
+// }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -343,7 +366,7 @@ mod tests {
                     Some(Token::Value((0, 1, 1), "a".to_string())),
                 ),
                 (
-                    Token::AttrIdentifier((0, 1, 1), "attr".to_string()),
+                    Token::AttrIdentifier((0, 1, 1), "AtTr".to_string()),
                     Some(Token::Value((0, 1, 1), "val".to_string())),
                 ),
                 (
@@ -358,6 +381,10 @@ mod tests {
                 (
                     Token::AttrIdentifier((0, 1, 1), "id".to_string()),
                     Some(Token::Value((0, 1, 1), "b".to_string())),
+                ),
+                (
+                    Token::AttrIdentifier((0, 1, 1), "Another-Attr".to_string()),
+                    Some(Token::Value((0, 1, 1), "a".to_string())),
                 ),
             ],
             vec![
@@ -473,6 +500,46 @@ mod tests {
             // odd
             NthExpr::from(PNthExpr::Odd((0, 1, 1))),
             NthExpr::AnPlusB(2, Some(NthExprOp::Add), 1)
+        );
+    }
+
+    #[test]
+    fn test_convert_to_selector() {
+        assert_eq!(
+            Selector::from(PSelector::Seq(vec![
+                PSelector::Simple(PSimpleSelector::new(
+                    (0, 1, 1),
+                    Some(ElemType::A),
+                    Some(Token::AttrIdentifier((0, 1, 1), "An-Id".to_string())),
+                    vec![
+                        Token::Str((0, 1, 1), "cl1".to_string()),
+                        Token::Str((0, 1, 1), "CL2".to_string()),
+                    ],
+                    false,
+                )),
+                PSelector::Attr(PAttrSelector::new(
+                    (0, 1, 1),
+                    Token::AttrIdentifier((0, 1, 1), "HrEf".to_string()),
+                    Some((
+                        PAttrSelectorOp::ContainsAtLeastOne((0, 1, 1)),
+                        Token::Str((0, 1, 1), "href-str".to_string()),
+                    )),
+                    true,
+                )),
+            ])),
+            Selector::Seq(vec![
+                Selector::Simple(SimpleSelector::new(
+                    Some(ElemType::A),
+                    Some("An-Id".to_string()),
+                    hashset! { "cl1".to_string(), "CL2".to_string() },
+                    false,
+                )),
+                Selector::Attr(AttrSelector::new(
+                    "href".to_string(),
+                    Some((AttrSelectorOp::ContainsAtLeastOne, "href-str".to_string())),
+                    true,
+                )),
+            ])
         );
     }
 }
