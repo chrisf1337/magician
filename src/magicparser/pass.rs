@@ -3,7 +3,6 @@ use magicparser::selectorparser::{AttrSelector as PAttrSelector,
                                   AttrSelectorOp as PAttrSelectorOp, Combinator as PCombinator,
                                   NthExpr as PNthExpr, NthExprOp as PNthExprOp,
                                   PseudoClassSelector as PPseudoClassSelector,
-                                  PseudoClassSelectorType as PPseudoClassSelectorType,
                                   PseudoElementSelector as PPseudoElementSelector,
                                   Selector as PSelector, SimpleSelector as PSimpleSelector};
 use magicparser::{ElemType, Token};
@@ -223,20 +222,22 @@ pub enum PseudoClassSelector {
 }
 
 impl From<PPseudoClassSelector> for PseudoClassSelector {
-    fn from(PPseudoClassSelector { sel_type, .. }: PPseudoClassSelector) -> Self {
-        use self::PPseudoClassSelectorType::*;
-        match sel_type {
-            Active => PseudoClassSelector::Active,
-            Hover => PseudoClassSelector::Hover,
-            Lang(tok) => PseudoClassSelector::Lang(tok.to_string()),
-            Link => PseudoClassSelector::Link,
-            Matches(sel) => PseudoClassSelector::Matches(Box::new(Selector::from(*sel))),
-            Visited => PseudoClassSelector::Visited,
-            Not(sel) => PseudoClassSelector::Not(Box::new(Selector::from(*sel))),
-            NthChild(nth_expr) => PseudoClassSelector::NthChild(NthExpr::from(nth_expr)),
-            NthLastChild(nth_expr) => PseudoClassSelector::NthLastChild(NthExpr::from(nth_expr)),
-            NthLastOfType(nth_expr) => PseudoClassSelector::NthLastOfType(NthExpr::from(nth_expr)),
-            NthOfType(nth_expr) => PseudoClassSelector::NthOfType(NthExpr::from(nth_expr)),
+    fn from(sel: PPseudoClassSelector) -> Self {
+        use self::PPseudoClassSelector::*;
+        match sel {
+            Active(_) => PseudoClassSelector::Active,
+            Hover(_) => PseudoClassSelector::Hover,
+            Lang(_, tok) => PseudoClassSelector::Lang(tok.to_string()),
+            Link(_) => PseudoClassSelector::Link,
+            Matches(_, sel) => PseudoClassSelector::Matches(Box::new(Selector::from(*sel))),
+            Visited(_) => PseudoClassSelector::Visited,
+            Not(_, sel) => PseudoClassSelector::Not(Box::new(Selector::from(*sel))),
+            NthChild(_, nth_expr) => PseudoClassSelector::NthChild(NthExpr::from(nth_expr)),
+            NthLastChild(_, nth_expr) => PseudoClassSelector::NthLastChild(NthExpr::from(nth_expr)),
+            NthLastOfType(_, nth_expr) => {
+                PseudoClassSelector::NthLastOfType(NthExpr::from(nth_expr))
+            }
+            NthOfType(_, nth_expr) => PseudoClassSelector::NthOfType(NthExpr::from(nth_expr)),
         }
     }
 }

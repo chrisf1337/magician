@@ -457,10 +457,7 @@ mod tests {
                                 vec![],
                                 false,
                             )),
-                            Selector::PseudoClass(PseudoClassSelector::new(
-                                (1, 1, 2),
-                                PseudoClassSelectorType::Link,
-                            )),
+                            Selector::PseudoClass(PseudoClassSelector::Link((1, 1, 2))),
                         ]),
                         Selector::Seq(vec![
                             Selector::Simple(SimpleSelector::new(
@@ -470,10 +467,7 @@ mod tests {
                                 vec![],
                                 false,
                             )),
-                            Selector::PseudoClass(PseudoClassSelector::new(
-                                (9, 1, 10),
-                                PseudoClassSelectorType::Visited,
-                            )),
+                            Selector::PseudoClass(PseudoClassSelector::Visited((9, 1, 10))),
                         ]),
                     ]),
                     vec![
@@ -501,10 +495,7 @@ mod tests {
                                 vec![],
                                 false,
                             )),
-                            Selector::PseudoClass(PseudoClassSelector::new(
-                                (91, 7, 2),
-                                PseudoClassSelectorType::Hover,
-                            )),
+                            Selector::PseudoClass(PseudoClassSelector::Hover((91, 7, 2))),
                         ]),
                         Selector::Seq(vec![
                             Selector::Simple(SimpleSelector::new(
@@ -514,10 +505,7 @@ mod tests {
                                 vec![],
                                 false,
                             )),
-                            Selector::PseudoClass(PseudoClassSelector::new(
-                                (100, 7, 11),
-                                PseudoClassSelectorType::Active,
-                            )),
+                            Selector::PseudoClass(PseudoClassSelector::Active((100, 7, 11))),
                         ]),
                     ]),
                     vec![
@@ -552,10 +540,7 @@ mod tests {
                                 vec![],
                                 false,
                             )),
-                            Selector::PseudoClass(PseudoClassSelector::new(
-                                (1, 1, 2),
-                                PseudoClassSelectorType::Link,
-                            )),
+                            Selector::PseudoClass(PseudoClassSelector::Link((1, 1, 2))),
                         ])),
                         Combinator::Descendant((6, 1, 7)),
                         Box::new(Selector::Seq(vec![
@@ -566,10 +551,7 @@ mod tests {
                                 vec![],
                                 false,
                             )),
-                            Selector::PseudoClass(PseudoClassSelector::new(
-                                (12, 4, 4),
-                                PseudoClassSelectorType::Visited,
-                            )),
+                            Selector::PseudoClass(PseudoClassSelector::Visited((12, 4, 4))),
                         ])),
                     ),
                     vec![
@@ -597,10 +579,7 @@ mod tests {
                                 vec![],
                                 false,
                             )),
-                            Selector::PseudoClass(PseudoClassSelector::new(
-                                (96, 14, 2),
-                                PseudoClassSelectorType::Hover,
-                            )),
+                            Selector::PseudoClass(PseudoClassSelector::Hover((96, 14, 2))),
                         ]),
                         Selector::Seq(vec![
                             Selector::Simple(SimpleSelector::new(
@@ -610,10 +589,7 @@ mod tests {
                                 vec![],
                                 false,
                             )),
-                            Selector::PseudoClass(PseudoClassSelector::new(
-                                (108, 18, 2),
-                                PseudoClassSelectorType::Active,
-                            )),
+                            Selector::PseudoClass(PseudoClassSelector::Active((108, 18, 2))),
                         ]),
                     ]),
                     vec![

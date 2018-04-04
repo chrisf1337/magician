@@ -113,33 +113,21 @@ pub enum NthExpr {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum PseudoClassSelectorType {
-    Active,
-    Hover,
+pub enum PseudoClassSelector {
+    Active(Pos),
+    Hover(Pos),
     // experimental: Dir,
     // experimental: Host,
     // experimental: HostContext,
-    Lang(Token),
-    Link,
-    Matches(Box<Selector>),
-    Visited,
-    Not(Box<Selector>),
-    NthChild(NthExpr),
-    NthLastChild(NthExpr),
-    NthLastOfType(NthExpr),
-    NthOfType(NthExpr),
-}
-
-#[derive(Debug, Eq, PartialEq)]
-pub struct PseudoClassSelector {
-    pub pos: Pos,
-    pub sel_type: PseudoClassSelectorType,
-}
-
-impl PseudoClassSelector {
-    pub fn new(pos: Pos, sel_type: PseudoClassSelectorType) -> PseudoClassSelector {
-        PseudoClassSelector { pos, sel_type }
-    }
+    Lang(Pos, Token),
+    Link(Pos),
+    Matches(Pos, Box<Selector>),
+    Visited(Pos),
+    Not(Pos, Box<Selector>),
+    NthChild(Pos, NthExpr),
+    NthLastChild(Pos, NthExpr),
+    NthLastOfType(Pos, NthExpr),
+    NthOfType(Pos, NthExpr),
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -442,47 +430,34 @@ impl SelectorParser {
 
     // strict
     fn parse_pseudo_class_selector(&mut self) -> Result<Selector> {
+        use self::PseudoClassSelector::*;
         match self.lexer.parse_chars_strict(":") {
             Ok(pos) => {
-                let sel_type = match self.parse_elem_identifier_strict()? {
-                    Token::ElemIdentifier(_, sel_name) => match sel_name
-                        .to_ascii_lowercase()
-                        .as_ref()
-                    {
-                        "active" => PseudoClassSelectorType::Active,
-                        "hover" => PseudoClassSelectorType::Hover,
-                        "lang" => PseudoClassSelectorType::Lang(self.parse_pcs_lang_args()?),
-                        "link" => PseudoClassSelectorType::Link,
-                        "matches" => {
-                            PseudoClassSelectorType::Matches(self.parse_pcs_selector_list_args()?)
+                let sel = match self.parse_elem_identifier_strict()? {
+                    Token::ElemIdentifier(_, sel_name) => {
+                        match sel_name.to_ascii_lowercase().as_ref() {
+                            "active" => Active(pos),
+                            "hover" => Hover(pos),
+                            "lang" => Lang(pos, self.parse_pcs_lang_args()?),
+                            "link" => Link(pos),
+                            "matches" => Matches(pos, self.parse_pcs_selector_list_args()?),
+                            "not" => Not(pos, self.parse_pcs_selector_list_args()?),
+                            "nth-child" => NthChild(pos, self.parse_nth_pcs_args()?),
+                            "nth-last-child" => NthLastChild(pos, self.parse_nth_pcs_args()?),
+                            "nth-last-of-type" => NthLastOfType(pos, self.parse_nth_pcs_args()?),
+                            "nth-of-type" => NthOfType(pos, self.parse_nth_pcs_args()?),
+                            "visited" => Visited(pos),
+                            _ => {
+                                return Err(SelectorParserError::Unexpected(
+                                    pos,
+                                    format!("unsupported pseudo-class selector: ::{}", sel_name),
+                                ))
+                            }
                         }
-                        "not" => PseudoClassSelectorType::Not(self.parse_pcs_selector_list_args()?),
-                        "nth-child" => {
-                            PseudoClassSelectorType::NthChild(self.parse_nth_pcs_args()?)
-                        }
-                        "nth-last-child" => {
-                            PseudoClassSelectorType::NthLastChild(self.parse_nth_pcs_args()?)
-                        }
-                        "nth-last-of-type" => {
-                            PseudoClassSelectorType::NthLastOfType(self.parse_nth_pcs_args()?)
-                        }
-                        "nth-of-type" => {
-                            PseudoClassSelectorType::NthOfType(self.parse_nth_pcs_args()?)
-                        }
-                        "visited" => PseudoClassSelectorType::Visited,
-                        _ => {
-                            return Err(SelectorParserError::Unexpected(
-                                pos,
-                                format!("unsupported pseudo-class selector: ::{}", sel_name),
-                            ))
-                        }
-                    },
+                    }
                     _ => unreachable!(),
                 };
-                Ok(Selector::PseudoClass(PseudoClassSelector::new(
-                    pos,
-                    sel_type,
-                )))
+                Ok(Selector::PseudoClass(sel))
             }
             Err(err) => return Err(SelectorParserError::from(err)),
         }
@@ -929,9 +904,9 @@ mod tests {
                     None,
                     true,
                 )),
-                Selector::PseudoClass(PseudoClassSelector::new(
+                Selector::PseudoClass(PseudoClassSelector::NthChild(
                     (8, 1, 9),
-                    PseudoClassSelectorType::NthChild(NthExpr::Even((19, 1, 20))),
+                    NthExpr::Even((19, 1, 20)),
                 )),
             ]))
         );
@@ -945,9 +920,9 @@ mod tests {
         assert_eq!(
             res,
             Ok(Selector::Seq(vec![
-                Selector::PseudoClass(PseudoClassSelector::new(
+                Selector::PseudoClass(PseudoClassSelector::NthChild(
                     (0, 1, 1),
-                    PseudoClassSelectorType::NthChild(NthExpr::Even((11, 1, 12))),
+                    NthExpr::Even((11, 1, 12)),
                 )),
                 Selector::Attr(AttrSelector::new(
                     (16, 1, 17),
@@ -996,9 +971,9 @@ mod tests {
                     ],
                     false,
                 )),
-                Selector::PseudoClass(PseudoClassSelector::new(
+                Selector::PseudoClass(PseudoClassSelector::NthChild(
                     (14, 1, 15),
-                    PseudoClassSelectorType::NthChild(NthExpr::Even((25, 1, 26))),
+                    NthExpr::Even((25, 1, 26)),
                 )),
                 Selector::Attr(AttrSelector::new(
                     (30, 1, 31),
@@ -1032,9 +1007,9 @@ mod tests {
                     ],
                     false,
                 )),
-                Selector::PseudoClass(PseudoClassSelector::new(
+                Selector::PseudoClass(PseudoClassSelector::NthChild(
                     (14, 1, 15),
-                    PseudoClassSelectorType::NthChild(NthExpr::Even((25, 1, 26))),
+                    NthExpr::Even((25, 1, 26)),
                 )),
                 Selector::Attr(AttrSelector::new(
                     (30, 1, 31),
@@ -1089,10 +1064,7 @@ mod tests {
         let res = parser.parse_selector_seq();
         assert_eq!(
             res,
-            Ok(Selector::PseudoClass(PseudoClassSelector::new(
-                (0, 1, 1),
-                PseudoClassSelectorType::Hover
-            )))
+            Ok(Selector::PseudoClass(PseudoClassSelector::Hover((0, 1, 1))))
         );
         assert_eq!(parser.pos(), (6, 1, 7));
     }
@@ -1103,9 +1075,9 @@ mod tests {
         let res = parser.parse_pseudo_class_selector();
         assert_eq!(
             res,
-            Ok(Selector::PseudoClass(PseudoClassSelector::new(
+            Ok(Selector::PseudoClass(PseudoClassSelector::Lang(
                 (0, 1, 1),
-                PseudoClassSelectorType::Lang(Token::ElemIdentifier((7, 1, 8), "en".to_string()))
+                Token::ElemIdentifier((7, 1, 8), "en".to_string())
             )))
         );
         assert_eq!(parser.pos(), (11, 1, 12));
@@ -1117,12 +1089,9 @@ mod tests {
         let res = parser.parse_pseudo_class_selector();
         assert_eq!(
             res,
-            Ok(Selector::PseudoClass(PseudoClassSelector::new(
+            Ok(Selector::PseudoClass(PseudoClassSelector::Lang(
                 (0, 1, 1),
-                PseudoClassSelectorType::Lang(Token::ElemIdentifier(
-                    (6, 1, 7),
-                    "zh-Hans".to_string()
-                ))
+                Token::ElemIdentifier((6, 1, 7), "zh-Hans".to_string())
             )))
         );
         assert_eq!(parser.pos(), (14, 1, 15));
@@ -1148,15 +1117,15 @@ mod tests {
         let res = parser.parse_pseudo_class_selector();
         assert_eq!(
             res,
-            Ok(Selector::PseudoClass(PseudoClassSelector::new(
+            Ok(Selector::PseudoClass(PseudoClassSelector::Not(
                 (0, 1, 1),
-                PseudoClassSelectorType::Not(Box::new(Selector::Simple(SimpleSelector::new(
+                Box::new(Selector::Simple(SimpleSelector::new(
                     (6, 1, 7),
                     Some(ElemType::A),
                     None,
                     vec![],
                     false,
-                )),))
+                )))
             )))
         );
         assert_eq!(parser.pos(), (9, 1, 10));
@@ -1168,9 +1137,9 @@ mod tests {
         let res = parser.parse_pseudo_class_selector();
         assert_eq!(
             res,
-            Ok(Selector::PseudoClass(PseudoClassSelector::new(
+            Ok(Selector::PseudoClass(PseudoClassSelector::Not(
                 (0, 1, 1),
-                PseudoClassSelectorType::Not(Box::new(Selector::Group(vec![
+                Box::new(Selector::Group(vec![
                     Selector::Simple(SimpleSelector::new(
                         (6, 1, 7),
                         Some(ElemType::A),
@@ -1184,7 +1153,7 @@ mod tests {
                         None,
                         false,
                     )),
-                ])))
+                ]))
             )))
         );
         assert_eq!(parser.pos(), (18, 1, 19));
@@ -1196,9 +1165,9 @@ mod tests {
         let res = parser.parse_pseudo_class_selector();
         assert_eq!(
             res,
-            Ok(Selector::PseudoClass(PseudoClassSelector::new(
+            Ok(Selector::PseudoClass(PseudoClassSelector::Not(
                 (0, 1, 1),
-                PseudoClassSelectorType::Not(Box::new(Selector::Combinator(
+                Box::new(Selector::Combinator(
                     Box::new(Selector::Simple(SimpleSelector::new(
                         (6, 1, 7),
                         Some(ElemType::A),
@@ -1213,7 +1182,7 @@ mod tests {
                         None,
                         false,
                     )))
-                )))
+                ))
             )))
         );
         assert_eq!(parser.pos(), (16, 1, 17));
@@ -1225,9 +1194,9 @@ mod tests {
         let res = parser.parse_pseudo_class_selector();
         assert_eq!(
             res,
-            Ok(Selector::PseudoClass(PseudoClassSelector::new(
+            Ok(Selector::PseudoClass(PseudoClassSelector::Matches(
                 (0, 1, 1),
-                PseudoClassSelectorType::Matches(Box::new(Selector::Group(vec![
+                Box::new(Selector::Group(vec![
                     Selector::Simple(SimpleSelector::new(
                         (9, 1, 10),
                         Some(ElemType::A),
@@ -1249,7 +1218,7 @@ mod tests {
                         vec![Token::AttrIdentifier((18, 1, 19), "cl".to_string())],
                         false,
                     )),
-                ])))
+                ]))
             )))
         );
         assert_eq!(parser.pos(), (21, 1, 22));
@@ -1485,9 +1454,9 @@ mod tests {
         let res = parser.parse_pseudo_class_selector();
         assert_eq!(
             res,
-            Ok(Selector::PseudoClass(PseudoClassSelector::new(
+            Ok(Selector::PseudoClass(PseudoClassSelector::NthChild(
                 (0, 1, 1),
-                PseudoClassSelectorType::NthChild(NthExpr::Even((11, 1, 12)))
+                NthExpr::Even((11, 1, 12))
             )))
         );
         assert_eq!(parser.pos(), (16, 1, 17));
@@ -1499,14 +1468,9 @@ mod tests {
         let res = parser.parse_pseudo_class_selector();
         assert_eq!(
             res,
-            Ok(Selector::PseudoClass(PseudoClassSelector::new(
+            Ok(Selector::PseudoClass(PseudoClassSelector::NthChild(
                 (0, 1, 1),
-                PseudoClassSelectorType::NthChild(NthExpr::AnPlusB(
-                    (12, 1, 13),
-                    Some(Token::Number((12, 1, 13), 2)),
-                    None,
-                    None
-                ))
+                NthExpr::AnPlusB((12, 1, 13), Some(Token::Number((12, 1, 13), 2)), None, None)
             )))
         );
         assert_eq!(parser.pos(), (16, 1, 17));
@@ -1518,14 +1482,14 @@ mod tests {
         let res = parser.parse_pseudo_class_selector();
         assert_eq!(
             res,
-            Ok(Selector::PseudoClass(PseudoClassSelector::new(
+            Ok(Selector::PseudoClass(PseudoClassSelector::NthChild(
                 (0, 1, 1),
-                PseudoClassSelectorType::NthChild(NthExpr::AnPlusB(
+                NthExpr::AnPlusB(
                     (11, 1, 12),
                     Some(Token::Number((11, 1, 12), 2)),
                     Some(NthExprOp::Sub((13, 1, 14))),
                     Some(Token::Number((14, 1, 15), 3)),
-                ))
+                )
             )))
         );
         assert_eq!(parser.pos(), (16, 1, 17));
@@ -1648,9 +1612,9 @@ mod tests {
                     ],
                     false,
                 )),
-                Selector::PseudoClass(PseudoClassSelector::new(
+                Selector::PseudoClass(PseudoClassSelector::NthChild(
                     (14, 1, 15),
-                    PseudoClassSelectorType::NthChild(NthExpr::Even((25, 1, 26))),
+                    NthExpr::Even((25, 1, 26)),
                 )),
                 Selector::Attr(AttrSelector::new(
                     (30, 1, 31),
@@ -1921,10 +1885,7 @@ mod tests {
         let res = SelectorParser::parse(":hover", (0, 1, 1));
         assert_eq!(
             res,
-            Ok(Selector::PseudoClass(PseudoClassSelector::new(
-                (0, 1, 1),
-                PseudoClassSelectorType::Hover
-            )))
+            Ok(Selector::PseudoClass(PseudoClassSelector::Hover((0, 1, 1))))
         );
     }
 
