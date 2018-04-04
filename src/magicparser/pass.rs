@@ -177,26 +177,17 @@ impl From<PNthExpr> for NthExpr {
         use self::PNthExpr::*;
         match expr {
             A(.., tok) => NthExpr::A(tok.to_string().parse::<isize>().unwrap()),
-            AnPlusB(.., Some(a), op, b) => match b {
-                Some(b) => NthExpr::AnPlusB(
-                    a.to_string().parse::<isize>().unwrap(),
-                    op.map(NthExprOp::from),
-                    b.to_string().parse::<isize>().unwrap(),
-                ),
-                None => NthExpr::AnPlusB(
-                    a.to_string().parse::<isize>().unwrap(),
-                    op.map(NthExprOp::from),
-                    0,
-                ),
+            AnPlusB(.., Some(Token::Number(_, a)), op, b) => match b {
+                Some(Token::Number(_, b)) => NthExpr::AnPlusB(a, op.map(NthExprOp::from), b),
+                None => NthExpr::AnPlusB(a, op.map(NthExprOp::from), 0),
+                _ => unreachable!(),
             },
             AnPlusB(.., None, op, b) => match b {
-                Some(b) => NthExpr::AnPlusB(
-                    1,
-                    op.map(NthExprOp::from),
-                    b.to_string().parse::<isize>().unwrap(),
-                ),
+                Some(Token::Number(_, b)) => NthExpr::AnPlusB(1, op.map(NthExprOp::from), b),
                 None => NthExpr::AnPlusB(1, op.map(NthExprOp::from), 0),
+                _ => unreachable!(),
             },
+            AnPlusB(..) => unreachable!(),
             Even(..) => NthExpr::AnPlusB(2, None, 0),
             Odd(..) => NthExpr::AnPlusB(2, Some(NthExprOp::Add), 1),
         }
@@ -414,5 +405,74 @@ mod tests {
                 ]
             )
         )
+    }
+
+    #[test]
+    fn test_convert_to_nth_expr1() {
+        assert_eq!(
+            // n
+            NthExpr::from(PNthExpr::AnPlusB((0, 1, 1), None, None, None)),
+            NthExpr::AnPlusB(1, None, 0)
+        );
+    }
+
+    #[test]
+    fn test_convert_to_nth_expr2() {
+        assert_eq!(
+            // -n
+            NthExpr::from(PNthExpr::AnPlusB(
+                (0, 1, 1),
+                Some(Token::Number((0, 1, 1), -1)),
+                None,
+                None
+            )),
+            NthExpr::AnPlusB(-1, None, 0)
+        );
+    }
+
+    #[test]
+    fn test_convert_to_nth_expr3() {
+        assert_eq!(
+            // n + 1
+            NthExpr::from(PNthExpr::AnPlusB(
+                (0, 1, 1),
+                None,
+                Some(PNthExprOp::Add((0, 1, 1))),
+                Some(Token::Number((0, 1, 1), 1))
+            )),
+            NthExpr::AnPlusB(1, Some(NthExprOp::Add), 1)
+        );
+    }
+
+    #[test]
+    fn test_convert_to_nth_expr4() {
+        assert_eq!(
+            // 2n + 1
+            NthExpr::from(PNthExpr::AnPlusB(
+                (0, 1, 1),
+                Some(Token::Number((0, 1, 1), 2)),
+                Some(PNthExprOp::Add((0, 1, 1))),
+                Some(Token::Number((0, 1, 1), 1))
+            )),
+            NthExpr::AnPlusB(2, Some(NthExprOp::Add), 1)
+        );
+    }
+
+    #[test]
+    fn test_convert_to_nth_expr_even() {
+        assert_eq!(
+            // even
+            NthExpr::from(PNthExpr::Even((0, 1, 1))),
+            NthExpr::AnPlusB(2, None, 0)
+        );
+    }
+
+    #[test]
+    fn test_convert_to_nth_expr_odd() {
+        assert_eq!(
+            // odd
+            NthExpr::from(PNthExpr::Odd((0, 1, 1))),
+            NthExpr::AnPlusB(2, Some(NthExprOp::Add), 1)
+        );
     }
 }
