@@ -9,6 +9,7 @@ pub mod selectorparser;
 pub use self::pass::DomNode;
 
 use std::convert::From;
+use std::fmt;
 
 // For running outside of cargo (e.g. lldb)
 pub static DEFAULT_CARGO_MANIFEST_DIR: &'static str = "/Users/chrisf/projects/magician";
@@ -36,6 +37,18 @@ impl Token {
             Token::AttrIdentifier(pos, st) => Token::AttrIdentifier(pos, st.to_lowercase()),
             Token::Value(pos, st) => Token::Value(pos, st.to_lowercase()),
             _ => self,
+        }
+    }
+}
+
+impl fmt::Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            &Token::Str(_, ref st) => write!(f, "{}", st),
+            &Token::ElemIdentifier(_, ref st) => write!(f, "{}", st),
+            &Token::AttrIdentifier(_, ref st) => write!(f, "{}", st),
+            &Token::Value(_, ref st) => write!(f, "{}", st),
+            &Token::Number(_, ref st) => write!(f, "{}", st),
         }
     }
 }
