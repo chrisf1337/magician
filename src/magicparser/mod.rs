@@ -53,33 +53,6 @@ impl fmt::Display for Token {
     }
 }
 
-impl ContentsEq for Token {
-    fn eq(&self, other: &Self) -> bool {
-        match self {
-            Token::Str(_, ref st) => match other {
-                Token::Str(_, ref other_st) => st == other_st,
-                _ => false,
-            },
-            Token::ElemIdentifier(_, ref st) => match other {
-                Token::ElemIdentifier(_, ref other_st) => st == other_st,
-                _ => false,
-            },
-            Token::AttrIdentifier(_, ref st) => match other {
-                Token::AttrIdentifier(_, ref other_st) => st == other_st,
-                _ => false,
-            },
-            Token::Value(_, ref st) => match other {
-                Token::Value(_, ref other_st) => st == other_st,
-                _ => false,
-            },
-            Token::Number(_, i) => match other {
-                Token::Number(_, other_i) => i == other_i,
-                _ => false,
-            },
-        }
-    }
-}
-
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum ElemType {
     Html,

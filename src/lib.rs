@@ -1,5 +1,6 @@
 #[warn(clippy)]
 pub mod magicparser;
+#[warn(clippy)]
 pub mod style;
 
 #[cfg(test)]

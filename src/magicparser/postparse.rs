@@ -19,7 +19,7 @@ pub struct DomNode {
 }
 
 impl DomNode {
-    fn new(
+    pub fn new(
         elem_type: ElemType,
         id: Option<String>,
         classes: HashSet<String>,
