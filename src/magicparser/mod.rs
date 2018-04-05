@@ -3,10 +3,10 @@ pub mod error;
 pub mod htmlparser;
 mod lexer;
 mod parser;
-mod pass;
+mod postparse;
 pub mod selectorparser;
 
-pub use self::pass::DomNode;
+pub use self::postparse::DomNode;
 
 use std::convert::From;
 use std::fmt;

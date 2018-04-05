@@ -23,8 +23,8 @@ cargo test
 ```
 
 ## To-do list
-- [x] Add tests for [`pass.rs`](src/magicparser/pass.rs)
-- [ ] CSS post-parse pass
+- [x] Add tests for [`postparse.rs`](src/magicparser/postparse.rs)
+- [x] CSS post-parse pass
 - [ ] Match selectors to DOM nodes
 - [ ] Calculate selector specificity
 - [ ] Link Rust lib to Swift frontend
