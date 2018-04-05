@@ -80,7 +80,7 @@ impl ContentsEq for Token {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum ElemType {
     Html,
     Text(String),

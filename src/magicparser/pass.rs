@@ -1,11 +1,11 @@
-// use magicparser::cssparser::{Block, DeclBlock};
-use magicparser::htmlparser::DomNode as PDomNode;
-use magicparser::selectorparser::{AttrSelector as PAttrSelector,
-                                  AttrSelectorOp as PAttrSelectorOp, Combinator as PCombinator,
-                                  NthExpr as PNthExpr, NthExprOp as PNthExprOp,
-                                  PseudoClassSelector as PPseudoClassSelector,
-                                  PseudoElementSelector as PPseudoElementSelector,
-                                  Selector as PSelector, SimpleSelector as PSimpleSelector};
+use magicparser::cssparser::{CssBlocks as CPCssBlocks, Token as CPToken};
+use magicparser::htmlparser::DomNode as HPDomNode;
+use magicparser::selectorparser::{AttrSelector as SPAttrSelector,
+                                  AttrSelectorOp as SPAttrSelectorOp, Combinator as SPCombinator,
+                                  NthExpr as SPNthExpr, NthExprOp as SPNthExprOp,
+                                  PseudoClassSelector as SPPseudoClassSelector,
+                                  PseudoElementSelector as SPPseudoElementSelector,
+                                  Selector as SPSelector, SimpleSelector as SPSimpleSelector};
 use magicparser::{ElemType, Token};
 use std::collections::{HashMap, HashSet};
 
@@ -36,14 +36,14 @@ impl DomNode {
     }
 }
 
-impl From<PDomNode> for DomNode {
+impl From<HPDomNode> for DomNode {
     fn from(
-        PDomNode {
+        HPDomNode {
             elem_type,
             attrs,
             children,
             ..
-        }: PDomNode,
+        }: HPDomNode,
     ) -> Self {
         let mut id: Option<String> = None;
         let mut classes: HashSet<String> = HashSet::new();
@@ -93,9 +93,9 @@ pub enum AttrSelectorOp {
     ContainsAtLeastOne, // *=
 }
 
-impl From<PAttrSelectorOp> for AttrSelectorOp {
-    fn from(attr_selector_op: PAttrSelectorOp) -> Self {
-        use self::PAttrSelectorOp::*;
+impl From<SPAttrSelectorOp> for AttrSelectorOp {
+    fn from(attr_selector_op: SPAttrSelectorOp) -> Self {
+        use self::SPAttrSelectorOp::*;
         match attr_selector_op {
             Exactly(_) => AttrSelectorOp::Exactly,
             ExactlyOne(_) => AttrSelectorOp::ExactlyOne,
@@ -158,9 +158,9 @@ pub enum NthExprOp {
     Sub,
 }
 
-impl From<PNthExprOp> for NthExprOp {
-    fn from(op: PNthExprOp) -> Self {
-        use self::PNthExprOp::*;
+impl From<SPNthExprOp> for NthExprOp {
+    fn from(op: SPNthExprOp) -> Self {
+        use self::SPNthExprOp::*;
         match op {
             Add(..) => NthExprOp::Add,
             Sub(..) => NthExprOp::Sub,
@@ -174,9 +174,9 @@ pub enum NthExpr {
     AnPlusB(isize, Option<NthExprOp>, isize),
 }
 
-impl From<PNthExpr> for NthExpr {
-    fn from(expr: PNthExpr) -> Self {
-        use self::PNthExpr::*;
+impl From<SPNthExpr> for NthExpr {
+    fn from(expr: SPNthExpr) -> Self {
+        use self::SPNthExpr::*;
         match expr {
             A(.., tok) => NthExpr::A(tok.to_string().parse::<isize>().unwrap()),
             AnPlusB(.., Some(Token::Number(_, a)), op, b) => match b {
@@ -214,9 +214,9 @@ pub enum PseudoClassSelector {
     NthOfType(NthExpr),
 }
 
-impl From<PPseudoClassSelector> for PseudoClassSelector {
-    fn from(sel: PPseudoClassSelector) -> Self {
-        use self::PPseudoClassSelector::*;
+impl From<SPPseudoClassSelector> for PseudoClassSelector {
+    fn from(sel: SPPseudoClassSelector) -> Self {
+        use self::SPPseudoClassSelector::*;
         match sel {
             Active(_) => PseudoClassSelector::Active,
             Hover(_) => PseudoClassSelector::Hover,
@@ -246,9 +246,9 @@ pub enum PseudoElementSelector {
     Slotted,
 }
 
-impl From<PPseudoElementSelector> for PseudoElementSelector {
-    fn from(sel: PPseudoElementSelector) -> Self {
-        use self::PPseudoElementSelector::*;
+impl From<SPPseudoElementSelector> for PseudoElementSelector {
+    fn from(sel: SPPseudoElementSelector) -> Self {
+        use self::SPPseudoElementSelector::*;
         match sel {
             After(..) => PseudoElementSelector::After,
             Before(..) => PseudoElementSelector::Before,
@@ -269,9 +269,9 @@ pub enum Combinator {
     Descendant,      // space
 }
 
-impl From<PCombinator> for Combinator {
-    fn from(com: PCombinator) -> Self {
-        use self::PCombinator::*;
+impl From<SPCombinator> for Combinator {
+    fn from(com: SPCombinator) -> Self {
+        use self::SPCombinator::*;
         match com {
             AdjacentSibling(..) => Combinator::AdjacentSibling,
             GeneralSibling(..) => Combinator::GeneralSibling,
@@ -292,11 +292,11 @@ pub enum Selector {
     Group(Vec<Selector>), // comma-separated group
 }
 
-impl From<PSelector> for Selector {
-    fn from(pselector: PSelector) -> Selector {
-        use self::PSelector::*;
-        match pselector {
-            Simple(PSimpleSelector {
+impl From<SPSelector> for Selector {
+    fn from(selector: SPSelector) -> Selector {
+        use self::SPSelector::*;
+        match selector {
+            Simple(SPSimpleSelector {
                 elem_type,
                 id,
                 classes,
@@ -307,7 +307,7 @@ impl From<PSelector> for Selector {
                 let classes = classes.iter().map(|cl| cl.to_string()).collect();
                 Selector::Simple(SimpleSelector::new(elem_type, id, classes, universal))
             }
-            Attr(PAttrSelector {
+            Attr(SPAttrSelector {
                 attr,
                 op_val,
                 case_insensitive,
@@ -330,26 +330,45 @@ impl From<PSelector> for Selector {
     }
 }
 
-// pub type CssBlocks = Vec<(Selector, HashMap<String, String>)>;
+// Unfortunately in Rust HashSet doesn't impl Hash, so we can't have a key of Selector
+#[derive(Debug, PartialEq, Eq)]
+pub struct CssBlocks(pub Vec<(Selector, HashMap<String, String>)>);
 
-// fn insert_decl_block(css_blocks: &mut CssBlocks, selector: &Selector, decl_block: &DeclBlock) {
-//     for &mut (css_bl_sel, css_bl_props) in css_blocks.iter_mut() {
-//         if css_bl_sel == *selector {
-//             for &(prop, val) in decl_block.iter() {
-//                 css_bl_props.insert(prop.clone(), val.clone());
-//             }
-//             break;
-//         }
-//     }
-// }
-
-// pub fn make_css_blocks(blocks: &Vec<Block>) -> CssBlocks {
-//     let mut css_blocks = vec![];
-//     // for &(selector, decl_block) in blocks.iter() {
-
-//     // }
-//     css_blocks
-// }
+impl From<CPCssBlocks> for CssBlocks {
+    fn from(CPCssBlocks(blocks): CPCssBlocks) -> Self {
+        let mut blks = vec![];
+        for (selector, decl_block) in blocks.into_iter() {
+            // Check if selector is already in blks
+            let sel = Selector::from(selector);
+            match blks.iter().position(
+                |&(ref blks_sel, _): &(Selector, HashMap<String, String>)| *blks_sel == sel,
+            ) {
+                Some(index) => {
+                    let (_, ref mut hmap) = &mut blks[index];
+                    for (property, value) in decl_block.into_iter() {
+                        if let (CPToken::Property(_, property), CPToken::Value(_, value)) =
+                            (property, value)
+                        {
+                            hmap.insert(property.to_lowercase().to_string(), value);
+                        }
+                    }
+                }
+                None => {
+                    let mut hmap = HashMap::new();
+                    for (property, value) in decl_block.into_iter() {
+                        if let (CPToken::Property(_, property), CPToken::Value(_, value)) =
+                            (property, value)
+                        {
+                            hmap.insert(property.to_lowercase().to_string(), value);
+                        }
+                    }
+                    blks.push((sel, hmap));
+                }
+            }
+        }
+        CssBlocks(blks)
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -357,7 +376,7 @@ mod tests {
 
     #[test]
     fn test_convert_to_domnode1() {
-        let parser_dom_node = PDomNode::new(
+        let parser_dom_node = HPDomNode::new(
             (0, 1, 1),
             ElemType::A,
             vec![
@@ -388,13 +407,13 @@ mod tests {
                 ),
             ],
             vec![
-                PDomNode::new(
+                HPDomNode::new(
                     (0, 1, 1),
                     ElemType::Text("text".to_string()),
                     vec![],
                     vec![],
                 ),
-                PDomNode::new(
+                HPDomNode::new(
                     (0, 1, 1),
                     ElemType::Custom("custom".to_string()),
                     vec![],
@@ -438,7 +457,7 @@ mod tests {
     fn test_convert_to_nth_expr1() {
         assert_eq!(
             // n
-            NthExpr::from(PNthExpr::AnPlusB((0, 1, 1), None, None, None)),
+            NthExpr::from(SPNthExpr::AnPlusB((0, 1, 1), None, None, None)),
             NthExpr::AnPlusB(1, None, 0)
         );
     }
@@ -447,7 +466,7 @@ mod tests {
     fn test_convert_to_nth_expr2() {
         assert_eq!(
             // -n
-            NthExpr::from(PNthExpr::AnPlusB(
+            NthExpr::from(SPNthExpr::AnPlusB(
                 (0, 1, 1),
                 Some(Token::Number((0, 1, 1), -1)),
                 None,
@@ -461,10 +480,10 @@ mod tests {
     fn test_convert_to_nth_expr3() {
         assert_eq!(
             // n + 1
-            NthExpr::from(PNthExpr::AnPlusB(
+            NthExpr::from(SPNthExpr::AnPlusB(
                 (0, 1, 1),
                 None,
-                Some(PNthExprOp::Add((0, 1, 1))),
+                Some(SPNthExprOp::Add((0, 1, 1))),
                 Some(Token::Number((0, 1, 1), 1))
             )),
             NthExpr::AnPlusB(1, Some(NthExprOp::Add), 1)
@@ -475,10 +494,10 @@ mod tests {
     fn test_convert_to_nth_expr4() {
         assert_eq!(
             // 2n + 1
-            NthExpr::from(PNthExpr::AnPlusB(
+            NthExpr::from(SPNthExpr::AnPlusB(
                 (0, 1, 1),
                 Some(Token::Number((0, 1, 1), 2)),
-                Some(PNthExprOp::Add((0, 1, 1))),
+                Some(SPNthExprOp::Add((0, 1, 1))),
                 Some(Token::Number((0, 1, 1), 1))
             )),
             NthExpr::AnPlusB(2, Some(NthExprOp::Add), 1)
@@ -489,7 +508,7 @@ mod tests {
     fn test_convert_to_nth_expr_even() {
         assert_eq!(
             // even
-            NthExpr::from(PNthExpr::Even((0, 1, 1))),
+            NthExpr::from(SPNthExpr::Even((0, 1, 1))),
             NthExpr::AnPlusB(2, None, 0)
         );
     }
@@ -498,7 +517,7 @@ mod tests {
     fn test_convert_to_nth_expr_odd() {
         assert_eq!(
             // odd
-            NthExpr::from(PNthExpr::Odd((0, 1, 1))),
+            NthExpr::from(SPNthExpr::Odd((0, 1, 1))),
             NthExpr::AnPlusB(2, Some(NthExprOp::Add), 1)
         );
     }
@@ -506,8 +525,8 @@ mod tests {
     #[test]
     fn test_convert_to_selector() {
         assert_eq!(
-            Selector::from(PSelector::Seq(vec![
-                PSelector::Simple(PSimpleSelector::new(
+            Selector::from(SPSelector::Seq(vec![
+                SPSelector::Simple(SPSimpleSelector::new(
                     (0, 1, 1),
                     Some(ElemType::A),
                     Some(Token::AttrIdentifier((0, 1, 1), "An-Id".to_string())),
@@ -517,11 +536,11 @@ mod tests {
                     ],
                     false,
                 )),
-                PSelector::Attr(PAttrSelector::new(
+                SPSelector::Attr(SPAttrSelector::new(
                     (0, 1, 1),
                     Token::AttrIdentifier((0, 1, 1), "HrEf".to_string()),
                     Some((
-                        PAttrSelectorOp::ContainsAtLeastOne((0, 1, 1)),
+                        SPAttrSelectorOp::ContainsAtLeastOne((0, 1, 1)),
                         Token::Str((0, 1, 1), "href-str".to_string()),
                     )),
                     true,
@@ -539,6 +558,62 @@ mod tests {
                     Some((AttrSelectorOp::ContainsAtLeastOne, "href-str".to_string())),
                     true,
                 )),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_convert_to_css_blocks() {
+        assert_eq!(
+            CssBlocks::from(CPCssBlocks(vec![
+                (
+                    SPSelector::Simple(SPSimpleSelector::new(
+                        (0, 1, 1),
+                        Some(ElemType::A),
+                        None,
+                        vec![],
+                        false,
+                    )),
+                    vec![
+                        (
+                            CPToken::Property((0, 1, 1), "AttR1".to_string()),
+                            CPToken::Value((0, 1, 1), "val1".to_string()),
+                        ),
+                        (
+                            CPToken::Property((0, 1, 1), "AttR2".to_string()),
+                            CPToken::Value((0, 1, 1), "val2".to_string()),
+                        ),
+                    ],
+                ),
+                (
+                    SPSelector::Simple(SPSimpleSelector::new(
+                        (0, 1, 1),
+                        Some(ElemType::A),
+                        None,
+                        vec![],
+                        false,
+                    )),
+                    vec![
+                        (
+                            CPToken::Property((0, 1, 1), "AtTr2".to_string()),
+                            CPToken::Value((0, 1, 1), "val3".to_string()),
+                        ),
+                    ],
+                ),
+            ])),
+            CssBlocks(vec![
+                (
+                    Selector::Simple(SimpleSelector::new(
+                        Some(ElemType::A),
+                        None,
+                        hashset!{},
+                        false,
+                    )),
+                    hashmap! {
+                        "attr1".to_string() => "val1".to_string(),
+                        "attr2".to_string() => "val3".to_string()
+                    },
+                ),
             ])
         );
     }

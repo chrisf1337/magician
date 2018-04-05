@@ -9,7 +9,7 @@ type IntermediateBlock = (Token, DeclBlock);
 type Block = (Selector, DeclBlock);
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct CssBlocks(Vec<Block>);
+pub struct CssBlocks(pub Vec<Block>);
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Token {
