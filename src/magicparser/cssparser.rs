@@ -33,15 +33,12 @@ impl CssParser {
         self.lexer.consume_whitespace()?;
         let start_pos = self.pos();
         let mut selector: Vec<char> = vec![];
-        loop {
-            match self.lexer.peek_char() {
-                Ok((_, ch)) => if ch != '{' && ch != ';' {
-                    selector.push(ch);
-                    self.lexer.consume_char()?;
-                } else {
-                    break;
-                },
-                Err(_) => break,
+        while let Ok((_, ch)) = self.lexer.peek_char() {
+            if ch != '{' && ch != ';' {
+                selector.push(ch);
+                self.lexer.consume_char()?;
+            } else {
+                break;
             }
         }
 
@@ -59,7 +56,7 @@ impl CssParser {
     }
 
     fn parse_property(&mut self) -> Result<Token> {
-        let _ = self.lexer.consume_whitespace()?;
+        self.lexer.consume_whitespace()?;
         let start_pos = self.pos();
         let mut property: Vec<char> = vec![];
         match self.lexer.peek_char() {
@@ -74,15 +71,12 @@ impl CssParser {
             },
             Err(err) => return Err(err),
         }
-        loop {
-            match self.lexer.peek_char() {
-                Ok((_, ch)) => if ch.is_ascii_alphanumeric() || ch == '-' {
-                    property.push(ch);
-                    self.lexer.consume_char()?;
-                } else {
-                    break;
-                },
-                Err(_) => break,
+        while let Ok((_, ch)) = self.lexer.peek_char() {
+            if ch.is_ascii_alphanumeric() || ch == '-' {
+                property.push(ch);
+                self.lexer.consume_char()?;
+            } else {
+                break;
             }
         }
         if property.is_empty() {
@@ -96,18 +90,15 @@ impl CssParser {
     }
 
     fn parse_value(&mut self) -> Result<Token> {
-        let _ = self.lexer.consume_whitespace()?;
+        self.lexer.consume_whitespace()?;
         let start_pos = self.pos();
         let mut value: Vec<char> = vec![];
-        loop {
-            match self.lexer.peek_char() {
-                Ok((_, ch)) => if ch != ';' && ch != '}' {
-                    value.push(ch);
-                    self.lexer.consume_char()?;
-                } else {
-                    break;
-                },
-                Err(_) => break,
+        while let Ok((_, ch)) = self.lexer.peek_char() {
+            if ch != ';' && ch != '}' {
+                value.push(ch);
+                self.lexer.consume_char()?;
+            } else {
+                break;
             }
         }
         if value.is_empty() {
@@ -123,11 +114,7 @@ impl CssParser {
     fn parse_decl_block(&mut self) -> Result<DeclBlock> {
         let mut declarations: Vec<(Token, Token)> = vec![];
         let block_start = self.lexer.parse_chars("{")?;
-        loop {
-            let property = match self.parse_property() {
-                Ok(p) => p,
-                Err(_) => break,
-            };
+        while let Ok(property) = self.parse_property() {
             self.lexer.try_parse_chars(":")?;
             let value = self.parse_value()?;
             declarations.push((property, value));
@@ -153,11 +140,8 @@ impl CssParser {
 
     fn parse_blocks(&mut self) -> Result<Vec<IntermediateBlock>> {
         let mut blocks = vec![];
-        loop {
-            match self.parse_block() {
-                Ok(bl) => blocks.push(bl),
-                Err(_) => break,
-            }
+        while let Ok(bl) = self.parse_block() {
+            blocks.push(bl)
         }
         Ok(blocks)
     }
@@ -166,7 +150,7 @@ impl CssParser {
         let mut parser = CssParser::new(input);
         let int_blocks = parser.parse_blocks()?;
         let mut blocks = vec![];
-        for (token, decl_block) in int_blocks.into_iter() {
+        for (token, decl_block) in int_blocks {
             match token {
                 Token::Selector(pos, sel_str) => {
                     blocks.push((SelectorParser::parse(&sel_str, pos)?, decl_block))
@@ -399,8 +383,11 @@ mod tests {
 
     #[test]
     fn test_simple1() {
-        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap_or(DEFAULT_CARGO_MANIFEST_DIR.to_string()))
-            .join("src/magicparser/cssparser_tests");
+        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR")
+            .unwrap_or_else(|_| DEFAULT_CARGO_MANIFEST_DIR.to_string()))
+            .join(
+            "src/magicparser/cssparser_tests",
+        );
         let mut f = File::open(test_dir.join("simple.css")).expect("file not found");
         let mut input = String::new();
         f.read_to_string(&mut input).expect("read");
@@ -441,8 +428,11 @@ mod tests {
 
     #[test]
     fn test_simple2() {
-        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap_or(DEFAULT_CARGO_MANIFEST_DIR.to_string()))
-            .join("src/magicparser/cssparser_tests");
+        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR")
+            .unwrap_or_else(|_| DEFAULT_CARGO_MANIFEST_DIR.to_string()))
+            .join(
+            "src/magicparser/cssparser_tests",
+        );
         let mut f = File::open(test_dir.join("simple.css")).expect("file not found");
         let mut input = String::new();
         f.read_to_string(&mut input).expect("read");
@@ -524,8 +514,11 @@ mod tests {
 
     #[test]
     fn test_simple_whitespace() {
-        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap_or(DEFAULT_CARGO_MANIFEST_DIR.to_string()))
-            .join("src/magicparser/cssparser_tests");
+        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR")
+            .unwrap_or_else(|_| DEFAULT_CARGO_MANIFEST_DIR.to_string()))
+            .join(
+            "src/magicparser/cssparser_tests",
+        );
         let mut f = File::open(test_dir.join("simple_whitespace.css")).expect("file not found");
         let mut input = String::new();
         f.read_to_string(&mut input).expect("read");

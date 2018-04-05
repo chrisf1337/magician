@@ -48,10 +48,12 @@ impl From<HPDomNode> for DomNode {
         let mut id: Option<String> = None;
         let mut classes: HashSet<String> = HashSet::new();
         let mut deduped_attrs: HashMap<String, Option<String>> = HashMap::new();
-        for &(ref attr, ref val) in attrs.iter() {
+        for &(ref attr, ref val) in &attrs {
             let value = match val {
-                Some(Token::Value(_, ref value_str)) => Some(value_str.to_string()),
-                Some(Token::Str(_, ref value_str)) => Some(value_str.to_string()),
+                Some(Token::Value(_, ref value_str)) | Some(Token::Str(_, ref value_str)) => {
+                    Some(value_str.to_string())
+                }
+                // => Some(value_str.to_string()),
                 None => None,
                 _ => unreachable!(),
             };
@@ -61,7 +63,7 @@ impl From<HPDomNode> for DomNode {
                 }
             }
         }
-        for (&ref attr, &ref value) in deduped_attrs.iter() {
+        for (attr, value) in &deduped_attrs {
             match attr.as_ref() {
                 "id" => id = value.clone(),
                 "class" => if let Some(value) = value {
@@ -77,7 +79,7 @@ impl From<HPDomNode> for DomNode {
             deduped_attrs,
             children
                 .iter()
-                .map(|&ref child| DomNode::from(child.clone()))
+                .map(|child| DomNode::from(child.clone()))
                 .collect(),
         )
     }
@@ -313,7 +315,7 @@ impl From<SPSelector> for Selector {
                 case_insensitive,
                 ..
             }) => {
-                let attr = attr.to_lowercase().to_string();
+                let attr = attr.into_lowercase().to_string();
                 let op_val = op_val.map(|(op, tok)| (AttrSelectorOp::from(op), tok.to_string()));
                 Selector::Attr(AttrSelector::new(attr, op_val, case_insensitive))
             }
@@ -337,7 +339,7 @@ pub struct CssBlocks(pub Vec<(Selector, HashMap<String, String>)>);
 impl From<CPCssBlocks> for CssBlocks {
     fn from(CPCssBlocks(blocks): CPCssBlocks) -> Self {
         let mut blks = vec![];
-        for (selector, decl_block) in blocks.into_iter() {
+        for (selector, decl_block) in blocks {
             // Check if selector is already in blks
             let sel = Selector::from(selector);
             match blks.iter().position(
@@ -345,7 +347,7 @@ impl From<CPCssBlocks> for CssBlocks {
             ) {
                 Some(index) => {
                     let (_, ref mut hmap) = &mut blks[index];
-                    for (property, value) in decl_block.into_iter() {
+                    for (property, value) in decl_block {
                         if let (CPToken::Property(_, property), CPToken::Value(_, value)) =
                             (property, value)
                         {
@@ -355,7 +357,7 @@ impl From<CPCssBlocks> for CssBlocks {
                 }
                 None => {
                     let mut hmap = HashMap::new();
-                    for (property, value) in decl_block.into_iter() {
+                    for (property, value) in decl_block {
                         if let (CPToken::Property(_, property), CPToken::Value(_, value)) =
                             (property, value)
                         {

@@ -30,7 +30,7 @@ pub enum Token {
 }
 
 impl Token {
-    pub fn to_lowercase(self) -> Self {
+    pub fn into_lowercase(self) -> Self {
         match self {
             Token::Str(pos, st) => Token::Str(pos, st.to_lowercase()),
             Token::ElemIdentifier(pos, st) => Token::ElemIdentifier(pos, st.to_lowercase()),
@@ -44,11 +44,11 @@ impl Token {
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            &Token::Str(_, ref st) => write!(f, "{}", st),
-            &Token::ElemIdentifier(_, ref st) => write!(f, "{}", st),
-            &Token::AttrIdentifier(_, ref st) => write!(f, "{}", st),
-            &Token::Value(_, ref st) => write!(f, "{}", st),
-            &Token::Number(_, ref st) => write!(f, "{}", st),
+            Token::Str(_, ref st)
+            | Token::ElemIdentifier(_, ref st)
+            | Token::AttrIdentifier(_, ref st)
+            | Token::Value(_, ref st) => write!(f, "{}", st),
+            Token::Number(_, ref st) => write!(f, "{}", st),
         }
     }
 }
@@ -56,24 +56,24 @@ impl fmt::Display for Token {
 impl ContentsEq for Token {
     fn eq(&self, other: &Self) -> bool {
         match self {
-            &Token::Str(_, ref st) => match other {
-                &Token::Str(_, ref other_st) => st == other_st,
+            Token::Str(_, ref st) => match other {
+                Token::Str(_, ref other_st) => st == other_st,
                 _ => false,
             },
-            &Token::ElemIdentifier(_, ref st) => match other {
-                &Token::ElemIdentifier(_, ref other_st) => st == other_st,
+            Token::ElemIdentifier(_, ref st) => match other {
+                Token::ElemIdentifier(_, ref other_st) => st == other_st,
                 _ => false,
             },
-            &Token::AttrIdentifier(_, ref st) => match other {
-                &Token::AttrIdentifier(_, ref other_st) => st == other_st,
+            Token::AttrIdentifier(_, ref st) => match other {
+                Token::AttrIdentifier(_, ref other_st) => st == other_st,
                 _ => false,
             },
-            &Token::Value(_, ref st) => match other {
-                &Token::Value(_, ref other_st) => st == other_st,
+            Token::Value(_, ref st) => match other {
+                Token::Value(_, ref other_st) => st == other_st,
                 _ => false,
             },
-            &Token::Number(_, i) => match other {
-                &Token::Number(_, other_i) => i == other_i,
+            Token::Number(_, i) => match other {
+                Token::Number(_, other_i) => i == other_i,
                 _ => false,
             },
         }
@@ -129,7 +129,7 @@ impl<'a> From<&'a String> for ElemType {
 impl ElemType {
     pub fn is_void_elem(&self) -> bool {
         match self {
-            &ElemType::Img => true,
+            ElemType::Img => true,
             _ => false,
         }
     }

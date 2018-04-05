@@ -1,3 +1,4 @@
+#[warn(clippy)]
 pub mod magicparser;
 pub mod style;
 

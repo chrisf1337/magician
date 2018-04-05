@@ -24,10 +24,10 @@ impl Lexer {
         block_comment_start: &str,
         block_comment_end: &str,
     ) -> Lexer {
-        if block_comment_start.len() > 0 && block_comment_end.len() == 0 {
+        if !block_comment_start.is_empty() && block_comment_end.is_empty() {
             panic!("cannot have non-empty block comment start and empty block comment end");
         }
-        if block_comment_end.len() > 0 && block_comment_start.len() == 0 {
+        if !block_comment_end.is_empty() && block_comment_start.is_empty() {
             panic!("cannot have non-empty block comment end and empty block comment start");
         }
         Lexer {
@@ -64,12 +64,12 @@ impl Lexer {
         if i >= self.input.len() {
             return Err(Error::Eof(self.pos()));
         }
-        return Ok(self.input[i]);
+        Ok(self.input[i])
     }
 
     fn get_chars(&self, i: usize, chars: &str) -> Result<()> {
         // println!("get_chars({}, {})", i, chars);
-        if chars.len() == 0 {
+        if chars.is_empty() {
             panic!("Cannot call get_chars() with empty string");
         }
         let mut res = self.get_char(i);
@@ -103,7 +103,7 @@ impl Lexer {
         // Check for comment
         let mut in_comment = false;
         let start_pos = self.pos();
-        if self.block_comment_start.len() > 0 {
+        if !self.block_comment_start.is_empty() {
             while self.get_chars(self.index, &self.block_comment_start)
                 .is_ok()
             {
@@ -231,7 +231,7 @@ impl Lexer {
 
     // Does not advance parser on failure since it peeks first (maybe it should?)
     pub fn try_parse_one_char(&mut self, ch: char) -> Result<Pos> {
-        let _ = self.consume_whitespace()?;
+        self.consume_whitespace()?;
         self.try_parse_one_char_strict(ch)
     }
 
@@ -285,13 +285,12 @@ impl Lexer {
     }
 
     pub fn try_parse_chars_list_strict(&mut self, chars_list: Vec<&str>) -> Result<(Pos, String)> {
-        if chars_list.len() == 0 {
+        if chars_list.is_empty() {
             panic!("Cannot call try_parse_chars_list_strict() with empty list");
         }
-        for &chars in chars_list.iter() {
-            match self.try_parse_chars_strict(chars) {
-                Ok(pos) => return Ok((pos, chars.to_string())),
-                Err(_) => (),
+        for &chars in &chars_list {
+            if let Ok(pos) = self.try_parse_chars_strict(chars) {
+                return Ok((pos, chars.to_string()));
             }
         }
         Err(Error::Unexpected(
@@ -306,7 +305,7 @@ impl Lexer {
     }
 
     pub fn try_parse_chars_list(&mut self, chars_list: Vec<&str>) -> Result<(Pos, String)> {
-        if chars_list.len() == 0 {
+        if chars_list.is_empty() {
             panic!("Cannot call parse_chars_list() with empty list");
         }
         let start_pos = self.pos();

@@ -41,7 +41,7 @@ impl HtmlParser {
     }
 
     fn parse_value(&mut self) -> Result<Token> {
-        let _ = self.lexer.consume_whitespace()?;
+        self.lexer.consume_whitespace()?;
         let start_pos = self.pos();
         let mut id: Vec<char> = vec![];
         match self.lexer.peek_char() {
@@ -53,17 +53,12 @@ impl HtmlParser {
             },
             Err(err) => return Err(err),
         }
-        loop {
-            match self.lexer.peek_char() {
-                Ok((_, ch)) => if !ch.is_ascii_whitespace() && ch != '<' && ch != '>' && ch != '"'
-                    && ch != '\''
-                {
-                    id.push(ch);
-                    self.lexer.consume_char()?;
-                } else {
-                    break;
-                },
-                Err(_) => break,
+        while let Ok((_, ch)) = self.lexer.peek_char() {
+            if !ch.is_ascii_whitespace() && ch != '<' && ch != '>' && ch != '"' && ch != '\'' {
+                id.push(ch);
+                self.lexer.consume_char()?;
+            } else {
+                break;
             }
         }
         if id.is_empty() {
@@ -185,19 +180,16 @@ impl HtmlParser {
     fn parse_text_node(&mut self) -> Result<DomNode> {
         let start_pos = self.pos();
         let mut text: Vec<char> = vec![];
-        loop {
-            match self.lexer.peek_char() {
-                Ok((_, ch)) => if ch != '<' {
-                    let (_, ch) = self.lexer.consume_char()?;
-                    text.push(ch);
-                } else {
-                    break;
-                },
-                Err(_) => break,
+        while let Ok((_, ch)) = self.lexer.peek_char() {
+            if ch != '<' {
+                let (_, ch) = self.lexer.consume_char()?;
+                text.push(ch);
+            } else {
+                break;
             }
         }
         let s: String = text.into_iter().collect::<String>().trim().to_string();
-        if s.len() == 0 {
+        if s.is_empty() {
             Err(Error::Unexpected(self.pos(), "empty text node".to_string()))
         } else {
             Ok(DomNode::new(start_pos, ElemType::Text(s), vec![], vec![]))
@@ -247,7 +239,7 @@ impl HtmlParser {
                             }
                             Err(err) => return Err(err),
                         }
-                    } else if chars.chars().next().unwrap() == '<' {
+                    } else if chars.starts_with('<') {
                         let child_node = match self.parse_node() {
                             Ok(child_node) => child_node,
                             Err(err) => {
@@ -325,8 +317,11 @@ mod tests {
 
     #[test]
     fn test_parse_tag_attributes_multiple_value_types() {
-        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap_or(DEFAULT_CARGO_MANIFEST_DIR.to_string()))
-            .join("src/magicparser/htmlparser_tests");
+        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR")
+            .unwrap_or_else(|_| DEFAULT_CARGO_MANIFEST_DIR.to_string()))
+            .join(
+            "src/magicparser/htmlparser_tests",
+        );
         let mut f = File::open(test_dir.join("parse_tag_attributes_multiple_value_types.html"))
             .expect("file not found");
         let mut input = String::new();
@@ -355,8 +350,11 @@ mod tests {
 
     #[test]
     fn test_parse_tag_attributes_whitespace() {
-        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap_or(DEFAULT_CARGO_MANIFEST_DIR.to_string()))
-            .join("src/magicparser/htmlparser_tests");
+        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR")
+            .unwrap_or_else(|_| DEFAULT_CARGO_MANIFEST_DIR.to_string()))
+            .join(
+            "src/magicparser/htmlparser_tests",
+        );
         let mut f = File::open(test_dir.join("parse_tag_attributes_whitespace.html"))
             .expect("file not found");
         let mut input = String::new();
@@ -933,8 +931,11 @@ mod tests {
 
     #[test]
     fn test_simple() {
-        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap_or(DEFAULT_CARGO_MANIFEST_DIR.to_string()))
-            .join("src/magicparser/htmlparser_tests");
+        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR")
+            .unwrap_or_else(|_| DEFAULT_CARGO_MANIFEST_DIR.to_string()))
+            .join(
+            "src/magicparser/htmlparser_tests",
+        );
         let mut f = File::open(test_dir.join("simple.html")).expect("file not found");
         let mut input = String::new();
         f.read_to_string(&mut input).expect("read");
@@ -1007,8 +1008,11 @@ mod tests {
 
     #[test]
     fn test_simple2() {
-        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap_or(DEFAULT_CARGO_MANIFEST_DIR.to_string()))
-            .join("src/magicparser/htmlparser_tests");
+        let test_dir = Path::new(&env::var("CARGO_MANIFEST_DIR")
+            .unwrap_or_else(|_| DEFAULT_CARGO_MANIFEST_DIR.to_string()))
+            .join(
+            "src/magicparser/htmlparser_tests",
+        );
         let mut f = File::open(test_dir.join("simple_whitespace.html")).expect("file not found");
         let mut input = String::new();
         f.read_to_string(&mut input).expect("read");

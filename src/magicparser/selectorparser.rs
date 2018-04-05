@@ -196,14 +196,11 @@ impl SelectorParser {
                 Ok((_, '#')) => {
                     self.lexer.consume_char()?;
                     let new_id = self.parse_attr_identifier_strict()?;
-                    match id {
-                        Some(old_id) => {
-                            return Err(SelectorParserError::MultipleIds(
-                                start_pos,
-                                format!("{:?} {:?}", old_id, new_id),
-                            ))
-                        }
-                        None => (),
+                    if let Some(old_id) = id {
+                        return Err(SelectorParserError::MultipleIds(
+                            start_pos,
+                            format!("{:?} {:?}", old_id, new_id),
+                        ));
                     }
                     id = Some(new_id);
                     found = true;
@@ -298,9 +295,8 @@ impl SelectorParser {
         let start_pos = self.pos();
         let mut selectors = vec![];
         // first check for a simple selector, which must come first
-        match self.parse_simple_selector() {
-            Ok(sel) => selectors.push(sel),
-            Err(_) => (),
+        if let Ok(sel) = self.parse_simple_selector() {
+            selectors.push(sel);
         }
         println!("selectors: {:?}", selectors);
         let parsers: Vec<ParserFn<Selector>> = vec![
@@ -356,7 +352,7 @@ impl SelectorParser {
                     } else {
                         None
                     },
-                    Err(err) => return Err(SelectorParserError::from(err)),
+                    Err(err) => return Err(err),
                 };
                 let n = if a.is_some() {
                     match self.lexer.try_parse_chars_strict("n") {
@@ -459,7 +455,7 @@ impl SelectorParser {
                 };
                 Ok(Selector::PseudoClass(sel))
             }
-            Err(err) => return Err(SelectorParserError::from(err)),
+            Err(err) => Err(SelectorParserError::from(err)),
         }
     }
 
@@ -577,9 +573,9 @@ impl SelectorParser {
             }
         }
         if selectors.len() == 1 {
-            return Ok(selectors.pop().unwrap());
+            Ok(selectors.pop().unwrap())
         } else {
-            return Ok(Selector::Group(selectors));
+            Ok(Selector::Group(selectors))
         }
     }
 

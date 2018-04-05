@@ -35,15 +35,12 @@ pub trait Parser<E: From<Error>> {
             },
             Err(err) => return Err(E::from(err)),
         }
-        loop {
-            match self.lexer().peek_char() {
-                Ok((_, ch)) => if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
-                    id.push(ch);
-                    self.lexer().consume_char()?;
-                } else {
-                    break;
-                },
-                Err(_) => break,
+        while let Ok((_, ch)) = self.lexer().peek_char() {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                id.push(ch);
+                self.lexer().consume_char()?;
+            } else {
+                break;
             }
         }
         if id.is_empty() {
@@ -78,15 +75,12 @@ pub trait Parser<E: From<Error>> {
             },
             Err(err) => return Err(E::from(err)),
         }
-        loop {
-            match self.lexer().peek_char() {
-                Ok((_, ch)) => if ch.is_ascii_alphanumeric() || ch == '-' {
-                    id.push(ch);
-                    self.lexer().consume_char()?;
-                } else {
-                    break;
-                },
-                Err(_) => break,
+        while let Ok((_, ch)) = self.lexer().peek_char() {
+            if ch.is_ascii_alphanumeric() || ch == '-' {
+                id.push(ch);
+                self.lexer().consume_char()?;
+            } else {
+                break;
             }
         }
         if id.is_empty() {
@@ -116,19 +110,16 @@ pub trait Parser<E: From<Error>> {
             },
             Err(err) => return Err(E::from(err)),
         };
-        loop {
-            match self.lexer().peek_char() {
-                Ok((pos, ch)) => if ch == '\n' {
-                    return Err(E::from(Error::Unexpected(
-                        pos,
-                        "unexpected newline in string".to_string(),
-                    )));
-                } else if ch == quote {
-                    break;
-                } else {
-                    st.push(self.lexer().consume_char()?.1);
-                },
-                Err(_) => break,
+        while let Ok((pos, ch)) = self.lexer().peek_char() {
+            if ch == '\n' {
+                return Err(E::from(Error::Unexpected(
+                    pos,
+                    "unexpected newline in string".to_string(),
+                )));
+            } else if ch == quote {
+                break;
+            } else {
+                st.push(self.lexer().consume_char()?.1);
             }
         }
 
@@ -164,15 +155,12 @@ pub trait Parser<E: From<Error>> {
             },
             Err(err) => return Err(E::from(err)),
         }
-        loop {
-            match self.lexer().peek_char() {
-                Ok((_, ch)) => if ch.is_ascii_digit() {
-                    self.lexer().consume_char()?;
-                    num.push(ch)
-                } else {
-                    break;
-                },
-                Err(_) => break,
+        while let Ok((_, ch)) = self.lexer().peek_char() {
+            if ch.is_ascii_digit() {
+                self.lexer().consume_char()?;
+                num.push(ch)
+            } else {
+                break;
             }
         }
         if num.is_empty() {
