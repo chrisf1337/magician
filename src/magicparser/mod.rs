@@ -1,12 +1,12 @@
-pub mod cssparser;
+mod cssparser;
 pub mod error;
-pub mod htmlparser;
+mod htmlparser;
 mod lexer;
 mod parser;
 mod postparse;
-pub mod selectorparser;
+mod selectorparser;
 
-pub use self::postparse::DomNode;
+pub use self::postparse::{CssBlocks, DomNode, Selector, SimpleSelector};
 
 use std::convert::From;
 use std::fmt;
@@ -135,6 +135,10 @@ impl ElemType {
     }
 }
 
-pub trait ContentsEq {
-    fn eq(&self, other: &Self) -> bool;
+pub fn parse_html(input: &str) -> error::Result<DomNode> {
+    Ok(DomNode::from(htmlparser::HtmlParser::parse(input)?))
+}
+
+pub fn parse_css(input: &str) -> error::Result<CssBlocks> {
+    Ok(CssBlocks::from(cssparser::CssParser::parse(input)?))
 }

@@ -38,7 +38,7 @@ type Result<T> = result::Result<T, SelectorParserError>;
 type ParserFn<T> = fn(&mut SelectorParser) -> Result<T>;
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum AttrSelectorOp {
+pub(super) enum AttrSelectorOp {
     Exactly(Pos),            // =
     ExactlyOne(Pos),         // ~=
     ExactlyOrHyphen(Pos),    // |=
@@ -48,7 +48,7 @@ pub enum AttrSelectorOp {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct SimpleSelector {
+pub(super) struct SimpleSelector {
     pub pos: Pos,
     pub elem_type: Option<ElemType>,
     pub id: Option<Token>,   // AttrIdentifier or Str
@@ -75,7 +75,7 @@ impl SimpleSelector {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct AttrSelector {
+pub(super) struct AttrSelector {
     pub pos: Pos,
     pub attr: Token,
     pub op_val: Option<(AttrSelectorOp, Token)>,
@@ -83,7 +83,7 @@ pub struct AttrSelector {
 }
 
 impl AttrSelector {
-    pub fn new(
+    pub(super) fn new(
         pos: Pos,
         attr: Token,
         op_val: Option<(AttrSelectorOp, Token)>,
@@ -99,13 +99,13 @@ impl AttrSelector {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum NthExprOp {
+pub(super) enum NthExprOp {
     Add(Pos),
     Sub(Pos),
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum NthExpr {
+pub(super) enum NthExpr {
     A(Pos, Token),
     AnPlusB(Pos, Option<Token>, Option<NthExprOp>, Option<Token>),
     Even(Pos),
@@ -113,7 +113,7 @@ pub enum NthExpr {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum PseudoClassSelector {
+pub(super) enum PseudoClassSelector {
     Active(Pos),
     Hover(Pos),
     // experimental: Dir,
@@ -131,7 +131,7 @@ pub enum PseudoClassSelector {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum PseudoElementSelector {
+pub(super) enum PseudoElementSelector {
     After(Pos),
     Before(Pos),
     Cue(Pos),
@@ -142,7 +142,7 @@ pub enum PseudoElementSelector {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum Combinator {
+pub(super) enum Combinator {
     AdjacentSibling(Pos), // +
     GeneralSibling(Pos),  // ~
     Child(Pos),           // >
@@ -150,7 +150,7 @@ pub enum Combinator {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum Selector {
+pub(super) enum Selector {
     Simple(SimpleSelector),
     Attr(AttrSelector),
     PseudoClass(PseudoClassSelector),
@@ -160,7 +160,7 @@ pub enum Selector {
     Group(Vec<Selector>), // comma-separated group
 }
 
-pub struct SelectorParser {
+pub(super) struct SelectorParser {
     lexer: Lexer,
 }
 

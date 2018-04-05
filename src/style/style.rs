@@ -1,5 +1,4 @@
-use magicparser::DomNode;
-use magicparser::selectorparser::{Selector, SimpleSelector};
+use magicparser::{DomNode, Selector, SimpleSelector};
 
 fn matches_simple_selector(
     dom_node: &DomNode,

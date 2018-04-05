@@ -4,15 +4,15 @@ use magicparser::lexer::Lexer;
 use magicparser::parser::Parser;
 use magicparser::selectorparser::{Selector, SelectorParser};
 
-pub type DeclBlock = Vec<(Token, Token)>;
+type DeclBlock = Vec<(Token, Token)>;
 type IntermediateBlock = (Token, DeclBlock);
 type Block = (Selector, DeclBlock);
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct CssBlocks(pub Vec<Block>);
+pub(super) struct CssBlocks(pub Vec<Block>);
 
 #[derive(Debug, Eq, PartialEq, Clone)]
-pub enum Token {
+pub(super) enum Token {
     Selector(Pos, String),
     Property(Pos, String),
     Value(Pos, String),
@@ -146,7 +146,7 @@ impl CssParser {
         Ok(blocks)
     }
 
-    pub fn parse(input: &str) -> Result<CssBlocks> {
+    pub(super) fn parse(input: &str) -> Result<CssBlocks> {
         let mut parser = CssParser::new(input);
         let int_blocks = parser.parse_blocks()?;
         let mut blocks = vec![];
