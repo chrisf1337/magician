@@ -6,7 +6,9 @@ mod parser;
 mod postparse;
 mod selectorparser;
 
-pub use self::postparse::{CssBlocks, DomNode, Selector, SimpleSelector};
+pub use self::postparse::{AttrSelector, AttrSelectorOp, Combinator, CssBlocks, DomNode, NthExpr,
+                          NthExprOp, PseudoClassSelector, PseudoElementSelector, Selector,
+                          SimpleSelector};
 
 use std::convert::From;
 use std::fmt;
