@@ -1,6 +1,7 @@
-#[warn(clippy)]
+#![allow(unknown_lints)]
+#![warn(clippy)]
+
 pub mod magicparser;
-#[warn(clippy)]
 pub mod style;
 
 #[cfg(test)]

@@ -595,28 +595,24 @@ mod tests {
                         vec![],
                         false,
                     )),
-                    vec![
-                        (
-                            CPToken::Property((0, 1, 1), "AtTr2".to_string()),
-                            CPToken::Value((0, 1, 1), "val3".to_string()),
-                        ),
-                    ],
+                    vec![(
+                        CPToken::Property((0, 1, 1), "AtTr2".to_string()),
+                        CPToken::Value((0, 1, 1), "val3".to_string()),
+                    )],
                 ),
             ])),
-            CssBlocks(vec![
-                (
-                    Selector::Simple(SimpleSelector::new(
-                        Some(ElemType::A),
-                        None,
-                        hashset!{},
-                        false,
-                    )),
-                    hashmap! {
-                        "attr1".to_string() => "val1".to_string(),
-                        "attr2".to_string() => "val3".to_string()
-                    },
-                ),
-            ])
+            CssBlocks(vec![(
+                Selector::Simple(SimpleSelector::new(
+                    Some(ElemType::A),
+                    None,
+                    hashset!{},
+                    false,
+                )),
+                hashmap! {
+                    "attr1".to_string() => "val1".to_string(),
+                    "attr2".to_string() => "val3".to_string()
+                },
+            )])
         );
     }
 }

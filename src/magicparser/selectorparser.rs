@@ -231,11 +231,7 @@ impl SelectorParser {
             ))
         } else {
             Ok(Selector::Simple(SimpleSelector::new(
-                start_pos,
-                elem_type,
-                id,
-                classes,
-                universal,
+                start_pos, elem_type, id, classes, universal,
             )))
         }
     }
@@ -277,6 +273,14 @@ impl SelectorParser {
             None => None,
         };
         let case_insensitive = self.lexer.try_parse_chars_list(vec!["i", "I"]).is_ok();
+        if op.is_none() {
+            if case_insensitive {
+                return Err(SelectorParserError::Unexpected(
+                    start_pos,
+                    "cannot specify i/I for attribute selector without op and val".to_string(),
+                ));
+            }
+        }
         self.lexer.parse_chars("]")?;
         let op_val = match op {
             Some(op) => Some((op, val.unwrap())),
@@ -797,6 +801,20 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_attr_selector_fail_case_insensitive() {
+        let mut parser = SelectorParser::new("[ a i ]");
+        let res = parser.parse_attr_selector();
+        assert_eq!(
+            res,
+            Err(SelectorParserError::Unexpected(
+                (0, 1, 1),
+                "cannot specify i/I for attribute selector without op and val".to_string()
+            ))
+        );
+        assert_eq!(parser.pos(), (5, 1, 6));
+    }
+
+    #[test]
     fn test_parse_attr_selector_fail_empty1() {
         let mut parser = SelectorParser::new("[]");
         let res = parser.parse_attr_selector();
@@ -812,7 +830,7 @@ mod tests {
 
     #[test]
     fn test_parse_selector_seq1() {
-        let mut parser = SelectorParser::new("a#id[href I][class~='cl']");
+        let mut parser = SelectorParser::new("a#id[href][class~='cl']");
         let res = parser.parse_selector_seq();
         assert_eq!(
             res,
@@ -828,25 +846,25 @@ mod tests {
                     (4, 1, 5),
                     Token::AttrIdentifier((5, 1, 6), "href".to_string()),
                     None,
-                    true,
+                    false,
                 )),
                 Selector::Attr(AttrSelector::new(
-                    (12, 1, 13),
-                    Token::AttrIdentifier((13, 1, 14), "class".to_string()),
+                    (10, 1, 11),
+                    Token::AttrIdentifier((11, 1, 12), "class".to_string()),
                     Some((
-                        AttrSelectorOp::ExactlyOne((18, 1, 19)),
-                        Token::Str((20, 1, 21), "cl".to_string()),
+                        AttrSelectorOp::ExactlyOne((16, 1, 17)),
+                        Token::Str((18, 1, 19), "cl".to_string()),
                     )),
                     false,
                 )),
             ]))
         );
-        assert_eq!(parser.pos(), (25, 1, 26));
+        assert_eq!(parser.pos(), (23, 1, 24));
     }
 
     #[test]
     fn test_parse_selector_seq2() {
-        let mut parser = SelectorParser::new("[href I][class~='cl']");
+        let mut parser = SelectorParser::new("[href][class~='cl']");
         let res = parser.parse_selector_seq();
         assert_eq!(
             res,
@@ -855,25 +873,25 @@ mod tests {
                     (0, 1, 1),
                     Token::AttrIdentifier((1, 1, 2), "href".to_string()),
                     None,
-                    true,
+                    false,
                 )),
                 Selector::Attr(AttrSelector::new(
-                    (8, 1, 9),
-                    Token::AttrIdentifier((9, 1, 10), "class".to_string()),
+                    (6, 1, 7),
+                    Token::AttrIdentifier((7, 1, 8), "class".to_string()),
                     Some((
-                        AttrSelectorOp::ExactlyOne((14, 1, 15)),
-                        Token::Str((16, 1, 17), "cl".to_string()),
+                        AttrSelectorOp::ExactlyOne((12, 1, 13)),
+                        Token::Str((14, 1, 15), "cl".to_string()),
                     )),
                     false,
                 )),
             ]))
         );
-        assert_eq!(parser.pos(), (21, 1, 22));
+        assert_eq!(parser.pos(), (19, 1, 20));
     }
 
     #[test]
     fn test_parse_selector_seq3() {
-        let mut parser = SelectorParser::new("[href I]:nth-child(even)");
+        let mut parser = SelectorParser::new("[href]:nth-child(even)");
         let res = parser.parse_selector_seq();
         assert_eq!(
             res,
@@ -882,20 +900,20 @@ mod tests {
                     (0, 1, 1),
                     Token::AttrIdentifier((1, 1, 2), "href".to_string()),
                     None,
-                    true,
+                    false,
                 )),
                 Selector::PseudoClass(PseudoClassSelector::NthChild(
-                    (8, 1, 9),
-                    NthExpr::Even((19, 1, 20)),
+                    (6, 1, 7),
+                    NthExpr::Even((17, 1, 18)),
                 )),
             ]))
         );
-        assert_eq!(parser.pos(), (24, 1, 25));
+        assert_eq!(parser.pos(), (22, 1, 23));
     }
 
     #[test]
     fn test_parse_selector_seq4() {
-        let mut parser = SelectorParser::new(":nth-child(even)[href I]");
+        let mut parser = SelectorParser::new(":nth-child(even)[href]");
         let res = parser.parse_selector_seq();
         assert_eq!(
             res,
@@ -908,16 +926,16 @@ mod tests {
                     (16, 1, 17),
                     Token::AttrIdentifier((17, 1, 18), "href".to_string()),
                     None,
-                    true,
+                    false,
                 )),
             ]))
         );
-        assert_eq!(parser.pos(), (24, 1, 25));
+        assert_eq!(parser.pos(), (22, 1, 23));
     }
 
     #[test]
     fn test_parse_selector_seq5() {
-        let mut parser = SelectorParser::new("[href I]::after");
+        let mut parser = SelectorParser::new("[href]::after");
         let res = parser.parse_selector_seq();
         assert_eq!(
             res,
@@ -926,12 +944,12 @@ mod tests {
                     (0, 1, 1),
                     Token::AttrIdentifier((1, 1, 2), "href".to_string()),
                     None,
-                    true,
+                    false,
                 )),
-                Selector::PseudoElement(PseudoElementSelector::After((8, 1, 9))),
+                Selector::PseudoElement(PseudoElementSelector::After((6, 1, 7))),
             ]))
         );
-        assert_eq!(parser.pos(), (15, 1, 16));
+        assert_eq!(parser.pos(), (13, 1, 14));
     }
 
     #[test]
@@ -1496,9 +1514,7 @@ mod tests {
         assert_eq!(
             res,
             Ok(Selector::PseudoElement(PseudoElementSelector::After((
-                0,
-                1,
-                1
+                0, 1, 1
             ))))
         );
         assert_eq!(parser.pos(), (7, 1, 8))
@@ -1511,9 +1527,7 @@ mod tests {
         assert_eq!(
             res,
             Ok(Selector::PseudoElement(PseudoElementSelector::After((
-                0,
-                1,
-                1
+                0, 1, 1
             ))))
         );
         assert_eq!(parser.pos(), (6, 1, 7))
