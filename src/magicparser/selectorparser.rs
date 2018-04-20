@@ -107,7 +107,7 @@ pub(super) enum NthExprOp {
 #[derive(Debug, Eq, PartialEq)]
 pub(super) enum NthExpr {
     A(Pos, Token),
-    AnPlusB(Pos, Option<Token>, Option<NthExprOp>, Option<Token>),
+    AnOpB(Pos, Option<Token>, Option<NthExprOp>, Option<Token>),
     Even(Pos),
     Odd(Pos),
 }
@@ -382,7 +382,7 @@ impl SelectorParser {
                     None => None,
                 };
                 if n {
-                    Ok(NthExpr::AnPlusB(start_pos, a, op, b))
+                    Ok(NthExpr::AnOpB(start_pos, a, op, b))
                 } else {
                     match a {
                         Some(a) => {
@@ -1244,7 +1244,7 @@ mod tests {
         let res = parser.parse_nth_expr();
         assert_eq!(
             res,
-            Ok(NthExpr::AnPlusB(
+            Ok(NthExpr::AnOpB(
                 (1, 1, 2),
                 Some(Token::Number((1, 1, 2), 12)),
                 None,
@@ -1260,7 +1260,7 @@ mod tests {
         let res = parser.parse_nth_expr();
         assert_eq!(
             res,
-            Ok(NthExpr::AnPlusB(
+            Ok(NthExpr::AnOpB(
                 (1, 1, 2),
                 Some(Token::Number((1, 1, 2), 12)),
                 Some(NthExprOp::Sub((4, 1, 5))),
@@ -1276,7 +1276,7 @@ mod tests {
         let res = parser.parse_nth_expr();
         assert_eq!(
             res,
-            Ok(NthExpr::AnPlusB(
+            Ok(NthExpr::AnOpB(
                 (0, 1, 1),
                 Some(Token::Number((0, 1, 1), 12)),
                 Some(NthExprOp::Add((4, 1, 5))),
@@ -1306,7 +1306,7 @@ mod tests {
     fn test_parse_nth_expr5() {
         let mut parser = SelectorParser::new("n");
         let res = parser.parse_nth_expr();
-        assert_eq!(res, Ok(NthExpr::AnPlusB((0, 1, 1), None, None, None)));
+        assert_eq!(res, Ok(NthExpr::AnOpB((0, 1, 1), None, None, None)));
         assert_eq!(parser.pos(), (1, 1, 2));
     }
 
@@ -1316,7 +1316,7 @@ mod tests {
         let res = parser.parse_nth_expr();
         assert_eq!(
             res,
-            Ok(NthExpr::AnPlusB(
+            Ok(NthExpr::AnOpB(
                 (0, 1, 1),
                 Some(Token::Number((0, 1, 1), -1)),
                 None,
@@ -1332,7 +1332,7 @@ mod tests {
         let res = parser.parse_nth_expr();
         assert_eq!(
             res,
-            Ok(NthExpr::AnPlusB(
+            Ok(NthExpr::AnOpB(
                 (0, 1, 1),
                 Some(Token::Number((0, 1, 1), -1)),
                 None,
@@ -1348,7 +1348,7 @@ mod tests {
         let res = parser.parse_nth_expr();
         assert_eq!(
             res,
-            Ok(NthExpr::AnPlusB(
+            Ok(NthExpr::AnOpB(
                 (0, 1, 1),
                 Some(Token::Number((0, 1, 1), -1)),
                 Some(NthExprOp::Sub((4, 1, 5))),
@@ -1380,7 +1380,7 @@ mod tests {
         let res = parser.parse_nth_expr();
         assert_eq!(
             res,
-            Ok(NthExpr::AnPlusB(
+            Ok(NthExpr::AnOpB(
                 (0, 1, 1),
                 Some(Token::Number((0, 1, 1), 0)),
                 Some(NthExprOp::Add((3, 1, 4))),
@@ -1468,7 +1468,7 @@ mod tests {
             res,
             Ok(Selector::PseudoClass(PseudoClassSelector::NthChild(
                 (0, 1, 1),
-                NthExpr::AnPlusB((12, 1, 13), Some(Token::Number((12, 1, 13), 2)), None, None)
+                NthExpr::AnOpB((12, 1, 13), Some(Token::Number((12, 1, 13), 2)), None, None)
             )))
         );
         assert_eq!(parser.pos(), (16, 1, 17));
@@ -1482,7 +1482,7 @@ mod tests {
             res,
             Ok(Selector::PseudoClass(PseudoClassSelector::NthChild(
                 (0, 1, 1),
-                NthExpr::AnPlusB(
+                NthExpr::AnOpB(
                     (11, 1, 12),
                     Some(Token::Number((11, 1, 12), 2)),
                     Some(NthExprOp::Sub((13, 1, 14))),

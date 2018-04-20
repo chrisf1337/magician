@@ -90,6 +90,7 @@ impl DomNodeRef {
         self
     }
 
+    // Starts at 1
     pub fn child_index(&self) -> Option<usize> {
         let parent = &self.ptr.borrow().parent;
         if let Some(ref parent) = parent {
@@ -99,7 +100,8 @@ impl DomNodeRef {
                     .borrow()
                     .children
                     .iter()
-                    .position(|child| child == self);
+                    .position(|child| child == self)
+                    .map(|x| x + 1);
             }
         }
         None
@@ -154,7 +156,7 @@ impl From<HPDomNode> for DomNodeRef {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum AttrSelectorOp {
     Exactly,            // =
     ExactlyOne,         // ~=
@@ -223,7 +225,7 @@ impl AttrSelector {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum NthExprOp {
     Add,
     Sub,
@@ -242,7 +244,20 @@ impl From<SPNthExprOp> for NthExprOp {
 #[derive(Debug, Eq, PartialEq)]
 pub enum NthExpr {
     A(isize),
-    AnPlusB(isize, Option<NthExprOp>, isize),
+    AnOpB(isize, Option<NthExprOp>, isize),
+}
+
+impl NthExpr {
+    pub fn matches(&self, i: usize) -> bool {
+        use self::NthExpr::*;
+        let i = i as isize;
+        match self {
+            &A(a) => a == i,
+            &AnOpB(a, Some(NthExprOp::Add), b) => (i - b) / a >= 0 && (i - b) % a == 0,
+            &AnOpB(a, Some(NthExprOp::Sub), b) => (i + b) / a >= 0 && (i + b) % a == 0,
+            &AnOpB(a, None, _) => i / a >= 0 && i % a == 0,
+        }
+    }
 }
 
 impl From<SPNthExpr> for NthExpr {
@@ -250,19 +265,19 @@ impl From<SPNthExpr> for NthExpr {
         use self::SPNthExpr::*;
         match expr {
             A(.., tok) => NthExpr::A(tok.to_string().parse::<isize>().unwrap()),
-            AnPlusB(.., Some(Token::Number(_, a)), op, b) => match b {
-                Some(Token::Number(_, b)) => NthExpr::AnPlusB(a, op.map(NthExprOp::from), b),
-                None => NthExpr::AnPlusB(a, op.map(NthExprOp::from), 0),
+            AnOpB(.., Some(Token::Number(_, a)), op, b) => match b {
+                Some(Token::Number(_, b)) => NthExpr::AnOpB(a, op.map(NthExprOp::from), b),
+                None => NthExpr::AnOpB(a, op.map(NthExprOp::from), 0),
                 _ => unreachable!(),
             },
-            AnPlusB(.., None, op, b) => match b {
-                Some(Token::Number(_, b)) => NthExpr::AnPlusB(1, op.map(NthExprOp::from), b),
-                None => NthExpr::AnPlusB(1, op.map(NthExprOp::from), 0),
+            AnOpB(.., None, op, b) => match b {
+                Some(Token::Number(_, b)) => NthExpr::AnOpB(1, op.map(NthExprOp::from), b),
+                None => NthExpr::AnOpB(1, op.map(NthExprOp::from), 0),
                 _ => unreachable!(),
             },
-            AnPlusB(..) => unreachable!(),
-            Even(..) => NthExpr::AnPlusB(2, None, 0),
-            Odd(..) => NthExpr::AnPlusB(2, Some(NthExprOp::Add), 1),
+            AnOpB(..) => unreachable!(),
+            Even(..) => NthExpr::AnOpB(2, None, 0),
+            Odd(..) => NthExpr::AnOpB(2, Some(NthExprOp::Add), 1),
         }
     }
 }
@@ -529,8 +544,8 @@ mod tests {
     fn test_convert_to_nth_expr1() {
         assert_eq!(
             // n
-            NthExpr::from(SPNthExpr::AnPlusB((0, 1, 1), None, None, None)),
-            NthExpr::AnPlusB(1, None, 0)
+            NthExpr::from(SPNthExpr::AnOpB((0, 1, 1), None, None, None)),
+            NthExpr::AnOpB(1, None, 0)
         );
     }
 
@@ -538,13 +553,13 @@ mod tests {
     fn test_convert_to_nth_expr2() {
         assert_eq!(
             // -n
-            NthExpr::from(SPNthExpr::AnPlusB(
+            NthExpr::from(SPNthExpr::AnOpB(
                 (0, 1, 1),
                 Some(Token::Number((0, 1, 1), -1)),
                 None,
                 None
             )),
-            NthExpr::AnPlusB(-1, None, 0)
+            NthExpr::AnOpB(-1, None, 0)
         );
     }
 
@@ -552,13 +567,13 @@ mod tests {
     fn test_convert_to_nth_expr3() {
         assert_eq!(
             // n + 1
-            NthExpr::from(SPNthExpr::AnPlusB(
+            NthExpr::from(SPNthExpr::AnOpB(
                 (0, 1, 1),
                 None,
                 Some(SPNthExprOp::Add((0, 1, 1))),
                 Some(Token::Number((0, 1, 1), 1))
             )),
-            NthExpr::AnPlusB(1, Some(NthExprOp::Add), 1)
+            NthExpr::AnOpB(1, Some(NthExprOp::Add), 1)
         );
     }
 
@@ -566,13 +581,13 @@ mod tests {
     fn test_convert_to_nth_expr4() {
         assert_eq!(
             // 2n + 1
-            NthExpr::from(SPNthExpr::AnPlusB(
+            NthExpr::from(SPNthExpr::AnOpB(
                 (0, 1, 1),
                 Some(Token::Number((0, 1, 1), 2)),
                 Some(SPNthExprOp::Add((0, 1, 1))),
                 Some(Token::Number((0, 1, 1), 1))
             )),
-            NthExpr::AnPlusB(2, Some(NthExprOp::Add), 1)
+            NthExpr::AnOpB(2, Some(NthExprOp::Add), 1)
         );
     }
 
@@ -581,7 +596,7 @@ mod tests {
         assert_eq!(
             // even
             NthExpr::from(SPNthExpr::Even((0, 1, 1))),
-            NthExpr::AnPlusB(2, None, 0)
+            NthExpr::AnOpB(2, None, 0)
         );
     }
 
@@ -590,7 +605,7 @@ mod tests {
         assert_eq!(
             // odd
             NthExpr::from(SPNthExpr::Odd((0, 1, 1))),
-            NthExpr::AnPlusB(2, Some(NthExprOp::Add), 1)
+            NthExpr::AnOpB(2, Some(NthExprOp::Add), 1)
         );
     }
 
@@ -708,7 +723,7 @@ mod tests {
                 vec![],
             ).to_dnref(),
         ]);
-        assert_eq!(parent.borrow().children[1].child_index(), Some(1));
+        assert_eq!(parent.borrow().children[1].child_index(), Some(2));
     }
 
     #[test]
@@ -733,7 +748,7 @@ mod tests {
                 vec![],
             ).to_dnref(),
         ]);
-        assert_eq!(parent.borrow().children[0].child_index(), Some(0));
+        assert_eq!(parent.borrow().children[0].child_index(), Some(1));
     }
 
     #[test]
@@ -759,5 +774,104 @@ mod tests {
             ).to_dnref(),
         ]);
         assert_eq!(parent.child_index(), None);
+    }
+
+    #[test]
+    fn test_nthexpr_matches_a() {
+        let expr = NthExpr::A(3);
+        assert!(!expr.matches(2));
+        assert!(expr.matches(3));
+    }
+
+    #[test]
+    fn test_nthexpr_matches_positive_an() {
+        let expr = NthExpr::AnOpB(1, None, 0);
+        assert!(expr.matches(1));
+        assert!(expr.matches(2));
+        assert!(expr.matches(3));
+        assert!(expr.matches(4));
+
+        let expr = NthExpr::AnOpB(2, None, 0);
+        assert!(!expr.matches(1));
+        assert!(expr.matches(2));
+        assert!(!expr.matches(3));
+        assert!(expr.matches(4));
+
+        let expr = NthExpr::AnOpB(3, None, 0);
+        assert!(!expr.matches(1));
+        assert!(!expr.matches(2));
+        assert!(expr.matches(3));
+        assert!(!expr.matches(4));
+    }
+
+    #[test]
+    fn test_nthexpr_matches_negative_an() {
+        let expr = NthExpr::AnOpB(-1, None, 0);
+        assert!(!expr.matches(1));
+        assert!(!expr.matches(2));
+        assert!(!expr.matches(3));
+        assert!(!expr.matches(4));
+
+        let expr = NthExpr::AnOpB(-2, None, 0);
+        assert!(!expr.matches(1));
+        assert!(!expr.matches(2));
+        assert!(!expr.matches(3));
+        assert!(!expr.matches(4));
+
+        let expr = NthExpr::AnOpB(-3, None, 0);
+        assert!(!expr.matches(1));
+        assert!(!expr.matches(2));
+        assert!(!expr.matches(3));
+        assert!(!expr.matches(4));
+    }
+
+    #[test]
+    fn test_nthexpr_matches_an_plus_b() {
+        let expr = NthExpr::AnOpB(1, Some(NthExprOp::Add), 2);
+        assert!(!expr.matches(1));
+        assert!(expr.matches(2));
+        assert!(expr.matches(3));
+        assert!(expr.matches(4));
+
+        let expr = NthExpr::AnOpB(-1, Some(NthExprOp::Add), 2);
+        assert!(expr.matches(1));
+        assert!(expr.matches(2));
+        assert!(!expr.matches(3));
+        assert!(!expr.matches(4));
+
+        let expr = NthExpr::AnOpB(2, Some(NthExprOp::Add), 1);
+        assert!(expr.matches(1));
+        assert!(!expr.matches(2));
+        assert!(expr.matches(3));
+        assert!(!expr.matches(4));
+
+        let expr = NthExpr::AnOpB(-2, Some(NthExprOp::Add), 3);
+        assert!(expr.matches(1));
+        assert!(!expr.matches(2));
+        assert!(expr.matches(3));
+        assert!(!expr.matches(4));
+        assert!(!expr.matches(5));
+    }
+
+    #[test]
+    fn test_nthexpr_matches_an_sub_b() {
+        let expr = NthExpr::AnOpB(1, Some(NthExprOp::Sub), 3);
+        assert!(expr.matches(1));
+        assert!(expr.matches(2));
+        assert!(expr.matches(3));
+        assert!(expr.matches(4));
+
+        let expr = NthExpr::AnOpB(2, Some(NthExprOp::Sub), 1);
+        assert!(expr.matches(1));
+        assert!(!expr.matches(2));
+        assert!(expr.matches(3));
+        assert!(!expr.matches(4));
+
+        let expr = NthExpr::AnOpB(-2, Some(NthExprOp::Sub), 1);
+        assert!(!expr.matches(1));
+        assert!(!expr.matches(2));
+        assert!(!expr.matches(3));
+        assert!(!expr.matches(4));
+        assert!(!expr.matches(5));
     }
 }
