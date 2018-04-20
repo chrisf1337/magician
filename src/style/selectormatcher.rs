@@ -1,5 +1,5 @@
-use magicparser::{AttrSelector, AttrSelectorOp, DomNode, DomNodeRef, PseudoClassSelector,
-                  Selector, SimpleSelector};
+use magicparser::{AttrSelector, AttrSelectorOp, DomNode, DomNodeRef, NthExpr, NthExprOp,
+                  PseudoClassSelector, Selector, SimpleSelector};
 use std::collections::HashSet;
 
 fn matches_simple_selector(
@@ -116,16 +116,15 @@ fn matches_attr_selector(
     }
 }
 
-// fn matches_pseudo_class_selector(
-//     DomNode { parent, .. }: &DomNode,
-//     selector: PseudoClassSelector,
-// ) -> bool {
-//     match selector {
-//         PseudoClassSelector::NthChild(ref expr) => {
-//         },
-//         _ => unimplemented!(),
-//     }
-// }
+fn matches_pseudo_class_selector(dom_node: &DomNodeRef, selector: &PseudoClassSelector) -> bool {
+    match selector {
+        PseudoClassSelector::NthChild(ref expr) => {
+            let child_index = dom_node.child_index().unwrap_or(1);
+            expr.matches(child_index)
+        }
+        _ => unimplemented!(),
+    }
+}
 
 fn matches(dom_node: &DomNodeRef, selector: &Selector) -> bool {
     match selector {
@@ -636,5 +635,92 @@ mod tests {
             true,
         );
         assert!(matches_attr_selector(&dom_node, &selector));
+    }
+
+    #[test]
+    fn test_matches_pcs_nth_child1() {
+        let dom_node = DomNode::new(
+            ElemType::A,
+            None,
+            hashset!{},
+            hashmap!{
+                "attr".to_string() => Some("http://www.ExAmplE.com".to_string())
+            },
+            None,
+            vec![],
+        ).to_dnref();
+        let selector = PseudoClassSelector::NthChild(NthExpr::A(1));
+        assert!(matches_pseudo_class_selector(&dom_node, &selector));
+
+        let selector = PseudoClassSelector::NthChild(NthExpr::A(2));
+        assert!(!matches_pseudo_class_selector(&dom_node, &selector));
+    }
+
+    #[test]
+    fn test_matches_pcs_nth_child2() {
+        let dom_node = DomNode::new(
+            ElemType::A,
+            None,
+            hashset!{},
+            hashmap!{
+                "attr".to_string() => Some("http://www.ExAmplE.com".to_string())
+            },
+            None,
+            vec![],
+        ).to_dnref();
+        dom_node.add_children(vec![
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+        ]);
+
+        let selector = PseudoClassSelector::NthChild(NthExpr::A(1));
+        assert!(matches_pseudo_class_selector(
+            &dom_node.borrow().children[0],
+            &selector
+        ));
+        assert!(!matches_pseudo_class_selector(
+            &dom_node.borrow().children[1],
+            &selector
+        ));
+    }
+
+    #[test]
+    fn test_matches_pcs_nth_child3() {
+        let dom_node = DomNode::new(
+            ElemType::A,
+            None,
+            hashset!{},
+            hashmap!{
+                "attr".to_string() => Some("http://www.ExAmplE.com".to_string())
+            },
+            None,
+            vec![],
+        ).to_dnref();
+        dom_node.add_children(vec![
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+        ]);
+
+        let selector = PseudoClassSelector::NthChild(NthExpr::AnOpB(2, Some(NthExprOp::Add), 1));
+        assert!(matches_pseudo_class_selector(
+            &dom_node.borrow().children[0],
+            &selector
+        ));
+        assert!(!matches_pseudo_class_selector(
+            &dom_node.borrow().children[1],
+            &selector
+        ));
+        assert!(matches_pseudo_class_selector(
+            &dom_node.borrow().children[2],
+            &selector
+        ));
+        assert!(!matches_pseudo_class_selector(
+            &dom_node.borrow().children[3],
+            &selector
+        ));
     }
 }

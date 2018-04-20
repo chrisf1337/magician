@@ -212,7 +212,6 @@ impl SelectorParser {
                 }
                 Ok((_, _)) => match self.parse_elem_identifier_strict() {
                     Ok(Token::ElemIdentifier(_, elem_name)) => {
-                        println!("HERE");
                         elem_type = Some(ElemType::from(&elem_name));
                         found = true;
                     }
@@ -302,7 +301,6 @@ impl SelectorParser {
         if let Ok(sel) = self.parse_simple_selector() {
             selectors.push(sel);
         }
-        println!("selectors: {:?}", selectors);
         let parsers: Vec<ParserFn<Selector>> = vec![
             Self::parse_attr_selector,
             Self::parse_pseudo_class_selector,
@@ -538,7 +536,6 @@ impl SelectorParser {
 
     fn parse_selector(&mut self) -> Result<Selector> {
         let sel1 = self.parse_selector_seq()?;
-        println!("sel1: {:?}", sel1);
         let pos = self.pos();
         match self.parse_combinator() {
             Ok(combinator) => {

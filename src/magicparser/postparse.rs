@@ -11,6 +11,9 @@ use std::cell::{Ref, RefCell, RefMut};
 use std::collections::{HashMap, HashSet};
 use std::convert::From;
 use std::rc::{Rc, Weak};
+use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
+
+static DOM_NODE_NEXT_ID_NUM: AtomicUsize = ATOMIC_USIZE_INIT;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DomNodeRef {
@@ -19,6 +22,7 @@ pub struct DomNodeRef {
 
 #[derive(Debug, Clone)]
 pub struct DomNode {
+    pub id_num: usize,
     pub elem_type: ElemType,
     pub id: Option<String>,
     pub classes: HashSet<String>,
@@ -29,8 +33,9 @@ pub struct DomNode {
 
 impl PartialEq for DomNode {
     fn eq(&self, other: &DomNode) -> bool {
-        self.elem_type == other.elem_type && self.id == other.id && self.classes == other.classes
-            && self.attrs == other.attrs && self.children == other.children
+        self.id_num == other.id_num && self.elem_type == other.elem_type && self.id == other.id
+            && self.classes == other.classes && self.attrs == other.attrs
+            && self.children == other.children
     }
 }
 
@@ -45,7 +50,9 @@ impl DomNode {
         parent: Option<Weak<RefCell<DomNode>>>,
         children: Vec<DomNodeRef>,
     ) -> DomNode {
+        let id_num = DOM_NODE_NEXT_ID_NUM.fetch_add(1, Ordering::SeqCst);
         DomNode {
+            id_num,
             elem_type,
             id,
             classes,
@@ -95,7 +102,6 @@ impl DomNodeRef {
         let parent = &self.ptr.borrow().parent;
         if let Some(ref parent) = parent {
             if let Some(ref parent) = Self::upgrade_from_weak(parent) {
-                println!("parent: {:?}", parent);
                 return parent
                     .borrow()
                     .children
@@ -105,6 +111,18 @@ impl DomNodeRef {
             }
         }
         None
+    }
+
+    pub fn eq_ignore_id_num(&self, other: &DomNodeRef) -> bool {
+        let this = self.borrow();
+        let other = other.borrow();
+
+        this.elem_type == other.elem_type && this.id == other.id && this.classes == other.classes
+            && this.attrs == other.attrs && this.children.len() == other.children.len()
+            && this.children
+                .iter()
+                .zip(other.children.iter())
+                .all(|(ch1, ch2)| ch1.eq_ignore_id_num(ch2))
     }
 }
 
@@ -254,6 +272,7 @@ impl NthExpr {
         match self {
             &A(a) => a == i,
             &AnOpB(a, Some(NthExprOp::Add), b) => (i - b) / a >= 0 && (i - b) % a == 0,
+
             &AnOpB(a, Some(NthExprOp::Sub), b) => (i + b) / a >= 0 && (i + b) % a == 0,
             &AnOpB(a, None, _) => i / a >= 0 && i % a == 0,
         }
@@ -537,7 +556,8 @@ mod tests {
             vec![],
         ).to_dnref();
         node.add_children(vec![child1, child2]);
-        assert_eq!(DomNodeRef::from(parser_dom_node), node);
+        assert!(DomNodeRef::from(parser_dom_node).eq_ignore_id_num(&node));
+        // assert_eq!(DomNodeRef::from(parser_dom_node), node)
     }
 
     #[test]

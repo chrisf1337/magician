@@ -66,7 +66,10 @@ fn test_htmlparser() {
 
     body.add_children(vec![h1, a, p]);
     html.add_child(body);
-    assert_eq!(parse_html(&input), Ok(html));
+    assert_eq!(
+        parse_html(&input).map(|node| node.eq_ignore_id_num(&html)),
+        Ok(true)
+    );
 }
 
 #[test]
