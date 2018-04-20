@@ -7,16 +7,30 @@ use magicparser::selectorparser::{AttrSelector as SPAttrSelector,
                                   PseudoElementSelector as SPPseudoElementSelector,
                                   Selector as SPSelector, SimpleSelector as SPSimpleSelector};
 use magicparser::{ElemType, Token};
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::rc::{Rc, Weak};
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+pub type DomNodeRef = Rc<RefCell<DomNode>>;
+
+#[derive(Debug, Clone)]
 pub struct DomNode {
     pub elem_type: ElemType,
     pub id: Option<String>,
     pub classes: HashSet<String>,
     pub attrs: HashMap<String, Option<String>>,
-    pub children: Vec<DomNode>,
+    pub parent: Option<Weak<RefCell<DomNode>>>,
+    pub children: Vec<Rc<RefCell<DomNode>>>,
 }
+
+impl PartialEq for DomNode {
+    fn eq(&self, other: &DomNode) -> bool {
+        self.elem_type == other.elem_type && self.attrs == other.attrs
+            && self.children == other.children
+    }
+}
+
+impl Eq for DomNode {}
 
 impl DomNode {
     pub fn new(
@@ -24,27 +38,43 @@ impl DomNode {
         id: Option<String>,
         classes: HashSet<String>,
         attrs: HashMap<String, Option<String>>,
-        children: Vec<DomNode>,
+        parent: Option<Weak<RefCell<DomNode>>>,
+        children: Vec<Rc<RefCell<DomNode>>>,
     ) -> DomNode {
         DomNode {
             elem_type,
             id,
             classes,
             attrs,
+            parent,
             children,
         }
     }
-}
 
-impl From<HPDomNode> for DomNode {
-    fn from(
+    pub fn to_dnref(self) -> DomNodeRef {
+        Rc::new(RefCell::new(self))
+    }
+
+    pub fn add_child(node: &DomNodeRef, child: DomNodeRef) {
+        child.borrow_mut().parent = Some(Rc::downgrade(node));
+        let mut node = node.borrow_mut();
+        node.children.push(child);
+    }
+
+    pub fn add_children(node: &DomNodeRef, children: Vec<DomNodeRef>) {
+        for child in children {
+            DomNode::add_child(node, child);
+        }
+    }
+
+    pub fn from(
         HPDomNode {
             elem_type,
             attrs,
             children,
             ..
         }: HPDomNode,
-    ) -> Self {
+    ) -> DomNodeRef {
         let mut id: Option<String> = None;
         let mut classes: HashSet<String> = HashSet::new();
         let mut deduped_attrs: HashMap<String, Option<String>> = HashMap::new();
@@ -72,16 +102,15 @@ impl From<HPDomNode> for DomNode {
                 _ => (),
             }
         }
-        DomNode::new(
-            elem_type,
-            id,
-            classes,
-            deduped_attrs,
-            children
-                .iter()
-                .map(|child| DomNode::from(child.clone()))
-                .collect(),
-        )
+
+        let node = DomNode::new(elem_type, id, classes, deduped_attrs, None, vec![]).to_dnref();
+
+        let children: Vec<_> = children
+            .iter()
+            .map(|child| DomNode::from(child.clone()))
+            .collect();
+        DomNode::add_children(&node, children);
+        node
     }
 }
 
@@ -423,36 +452,37 @@ mod tests {
                 ),
             ],
         );
-        assert_eq!(
-            DomNode::from(parser_dom_node),
-            DomNode::new(
-                ElemType::A,
-                Some("a".to_string()),
-                hashset! { "cl1".to_string(), "cl2".to_string() },
-                hashmap! {
-                    "id".to_string() => Some("a".to_string()),
-                    "class".to_string() => Some("cl1 cl2".to_string()),
-                    "attr".to_string() => Some("val".to_string()),
-                    "another-attr".to_string() => None
-                },
-                vec![
-                    DomNode::new(
-                        ElemType::Text("text".to_string()),
-                        None,
-                        HashSet::new(),
-                        HashMap::new(),
-                        vec![],
-                    ),
-                    DomNode::new(
-                        ElemType::Custom("custom".to_string()),
-                        None,
-                        HashSet::new(),
-                        HashMap::new(),
-                        vec![],
-                    ),
-                ]
-            )
-        )
+        let node = DomNode::new(
+            ElemType::A,
+            Some("a".to_string()),
+            hashset! { "cl1".to_string(), "cl2".to_string() },
+            hashmap! {
+                "id".to_string() => Some("a".to_string()),
+                "class".to_string() => Some("cl1 cl2".to_string()),
+                "attr".to_string() => Some("val".to_string()),
+                "another-attr".to_string() => None
+            },
+            None,
+            vec![],
+        ).to_dnref();
+        let child1 = DomNode::new(
+            ElemType::Text("text".to_string()),
+            None,
+            HashSet::new(),
+            HashMap::new(),
+            None,
+            vec![],
+        ).to_dnref();
+        let child2 = DomNode::new(
+            ElemType::Custom("custom".to_string()),
+            None,
+            HashSet::new(),
+            HashMap::new(),
+            None,
+            vec![],
+        ).to_dnref();
+        DomNode::add_children(&node, vec![child1, child2]);
+        assert_eq!(DomNode::from(parser_dom_node), node);
     }
 
     #[test]

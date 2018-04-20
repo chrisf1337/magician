@@ -1,13 +1,9 @@
-use magicparser::{AttrSelector, AttrSelectorOp, DomNode, Selector, SimpleSelector};
+use magicparser::{AttrSelector, AttrSelectorOp, DomNode, DomNodeRef, PseudoClassSelector,
+                  Selector, SimpleSelector};
 use std::collections::HashSet;
 
 fn matches_simple_selector(
-    DomNode {
-        id: dom_node_id,
-        elem_type: dom_node_elem_type,
-        classes: dom_node_classes,
-        ..
-    }: &DomNode,
+    node: &DomNodeRef,
     SimpleSelector {
         elem_type,
         id,
@@ -15,30 +11,33 @@ fn matches_simple_selector(
         ..
     }: &SimpleSelector,
 ) -> bool {
+    let node = node.borrow();
     if let Some(ref elem_type) = elem_type {
-        if *elem_type != *dom_node_elem_type {
+        if *elem_type != node.elem_type {
             return false;
         }
     }
-    if let (Some(ref id), Some(ref dom_node_id)) = (id, dom_node_id) {
+    if let (Some(ref id), Some(ref dom_node_id)) = (id, &node.id) {
         if *id != *dom_node_id {
             return false;
         }
     }
-    if !classes.is_empty() && !classes.is_subset(dom_node_classes) {
+    if !classes.is_empty() && !classes.is_subset(&node.classes) {
         return false;
     }
     true
 }
 
 fn matches_attr_selector(
-    DomNode { attrs, .. }: &DomNode,
+    node: &DomNodeRef,
     AttrSelector {
         attr,
         op_val,
         case_insensitive,
     }: &AttrSelector,
 ) -> bool {
+    let node = node.borrow();
+    let attrs = &node.attrs;
     match op_val {
         Some((op, val)) => {
             // Value of attr in DOM node
@@ -117,7 +116,18 @@ fn matches_attr_selector(
     }
 }
 
-fn matches(dom_node: &DomNode, selector: &Selector) -> bool {
+// fn matches_pseudo_class_selector(
+//     DomNode { parent, .. }: &DomNode,
+//     selector: PseudoClassSelector,
+// ) -> bool {
+//     match selector {
+//         PseudoClassSelector::NthChild(ref expr) => {
+//         },
+//         _ => unimplemented!(),
+//     }
+// }
+
+fn matches(dom_node: &DomNodeRef, selector: &Selector) -> bool {
     match selector {
         Selector::Simple(ref simple_sel) => matches_simple_selector(dom_node, simple_sel),
         Selector::Attr(ref attr_sel) => matches_attr_selector(dom_node, attr_sel),
@@ -132,7 +142,8 @@ mod tests {
 
     #[test]
     fn test_matches_simple_selector1() {
-        let dom_node = DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, vec![]);
+        let dom_node =
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref();
         let selector = SimpleSelector::new(Some(ElemType::A), None, hashset!{}, false);
         assert!(matches_simple_selector(&dom_node, &selector));
     }
@@ -147,8 +158,9 @@ mod tests {
                 "id".to_string() => Some("id".to_string()),
                 "class".to_string() => Some("cl1".to_string()),
             },
+            None,
             vec![],
-        );
+        ).to_dnref();
         let selector = SimpleSelector::new(None, None, hashset!{}, true);
         assert!(matches_simple_selector(&dom_node, &selector));
     }
@@ -162,8 +174,9 @@ mod tests {
             hashmap!{
                 "id".to_string() => Some("id".to_string())
             },
+            None,
             vec![],
-        );
+        ).to_dnref();
         let selector = SimpleSelector::new(None, Some("id".to_string()), hashset!{}, false);
         assert!(matches_simple_selector(&dom_node, &selector));
     }
@@ -175,8 +188,9 @@ mod tests {
             None,
             hashset!{"cl1".to_string(), "cl2".to_string()},
             hashmap!{},
+            None,
             vec![],
-        );
+        ).to_dnref();
         let selector = SimpleSelector::new(None, None, hashset!{"cl2".to_string()}, false);
         assert!(matches_simple_selector(&dom_node, &selector));
     }
@@ -188,8 +202,9 @@ mod tests {
             Some("id".to_string()),
             hashset!{"cl1".to_string()},
             hashmap!{},
+            None,
             vec![],
-        );
+        ).to_dnref();
         let selector = SimpleSelector::new(
             Some(ElemType::P),
             Some("id".to_string()),
@@ -206,8 +221,9 @@ mod tests {
             Some("id".to_string()),
             hashset!{},
             hashmap!{},
+            None,
             vec![],
-        );
+        ).to_dnref();
         let selector =
             SimpleSelector::new(Some(ElemType::P), Some("id".to_string()), hashset!{}, false);
         assert!(!matches_simple_selector(&dom_node, &selector));
@@ -220,8 +236,9 @@ mod tests {
             Some("id1".to_string()),
             hashset!{},
             hashmap!{},
+            None,
             vec![],
-        );
+        ).to_dnref();
         let selector = SimpleSelector::new(None, Some("id2".to_string()), hashset!{}, false);
         assert!(!matches_simple_selector(&dom_node, &selector));
     }
@@ -235,8 +252,9 @@ mod tests {
             hashmap!{
                 "id".to_string() => Some("id1".to_string())
             },
+            None,
             vec![],
-        );
+        ).to_dnref();
         let selector = AttrSelector::new("id".to_string(), None, false);
         assert!(matches_attr_selector(&dom_node, &selector));
     }
@@ -250,8 +268,9 @@ mod tests {
             hashmap!{
                 "id".to_string() => Some("id1".to_string())
             },
+            None,
             vec![],
-        );
+        ).to_dnref();
         let selector = AttrSelector::new("attr".to_string(), None, false);
         assert!(!matches_attr_selector(&dom_node, &selector));
     }
@@ -265,8 +284,9 @@ mod tests {
             hashmap!{
                 "id".to_string() => Some("id1".to_string())
             },
+            None,
             vec![],
-        );
+        ).to_dnref();
         let selector = AttrSelector::new(
             "id".to_string(),
             Some((AttrSelectorOp::Exactly, "id1".to_string())),
@@ -284,8 +304,9 @@ mod tests {
             hashmap!{
                 "id".to_string() => Some("id1".to_string())
             },
+            None,
             vec![],
-        );
+        ).to_dnref();
         let selector = AttrSelector::new(
             "id".to_string(),
             Some((AttrSelectorOp::Exactly, "Id1".to_string())),
@@ -303,8 +324,9 @@ mod tests {
             hashmap!{
                 "id".to_string() => Some("iD1".to_string())
             },
+            None,
             vec![],
-        );
+        ).to_dnref();
         let selector = AttrSelector::new(
             "id".to_string(),
             Some((AttrSelectorOp::Exactly, "Id1".to_string())),
@@ -322,8 +344,9 @@ mod tests {
             hashmap!{
                 "attr".to_string() => Some("val1 val2 val3".to_string())
             },
+            None,
             vec![],
-        );
+        ).to_dnref();
         let selector = AttrSelector::new(
             "attr".to_string(),
             Some((AttrSelectorOp::ExactlyOne, "val2".to_string())),
@@ -341,8 +364,9 @@ mod tests {
             hashmap!{
                 "attr".to_string() => Some("val1 val2 val3".to_string())
             },
+            None,
             vec![],
-        );
+        ).to_dnref();
         let selector = AttrSelector::new(
             "attr".to_string(),
             Some((AttrSelectorOp::ExactlyOne, "val".to_string())),
@@ -360,8 +384,9 @@ mod tests {
             hashmap!{
                 "attr".to_string() => Some("vaL1 vAl2 Val3".to_string())
             },
+            None,
             vec![],
-        );
+        ).to_dnref();
         let selector = AttrSelector::new(
             "attr".to_string(),
             Some((AttrSelectorOp::ExactlyOne, "VaL2".to_string())),
@@ -379,8 +404,9 @@ mod tests {
             hashmap!{
                 "attr".to_string() => Some("val-1".to_string())
             },
+            None,
             vec![],
-        );
+        ).to_dnref();
         let selector = AttrSelector::new(
             "attr".to_string(),
             Some((AttrSelectorOp::ExactlyOrHyphen, "val".to_string())),
@@ -398,8 +424,9 @@ mod tests {
             hashmap!{
                 "attr".to_string() => Some("val-1".to_string())
             },
+            None,
             vec![],
-        );
+        ).to_dnref();
         let selector = AttrSelector::new(
             "attr".to_string(),
             Some((AttrSelectorOp::ExactlyOrHyphen, "val-1".to_string())),
@@ -417,8 +444,9 @@ mod tests {
             hashmap!{
                 "attr".to_string() => Some("val-1".to_string())
             },
+            None,
             vec![],
-        );
+        ).to_dnref();
         let selector = AttrSelector::new(
             "attr".to_string(),
             Some((AttrSelectorOp::ExactlyOrHyphen, "val1".to_string())),
@@ -436,8 +464,9 @@ mod tests {
             hashmap!{
                 "attr".to_string() => Some("val1".to_string())
             },
+            None,
             vec![],
-        );
+        ).to_dnref();
         let selector = AttrSelector::new(
             "attr".to_string(),
             Some((AttrSelectorOp::Prefixed, "va".to_string())),
@@ -455,8 +484,9 @@ mod tests {
             hashmap!{
                 "attr".to_string() => Some("val1".to_string())
             },
+            None,
             vec![],
-        );
+        ).to_dnref();
         let selector = AttrSelector::new(
             "attr".to_string(),
             Some((AttrSelectorOp::Prefixed, "al".to_string())),
@@ -474,8 +504,9 @@ mod tests {
             hashmap!{
                 "attr".to_string() => Some("vAl1".to_string())
             },
+            None,
             vec![],
-        );
+        ).to_dnref();
         let selector = AttrSelector::new(
             "attr".to_string(),
             Some((AttrSelectorOp::Prefixed, "VaL".to_string())),
@@ -493,8 +524,9 @@ mod tests {
             hashmap!{
                 "attr".to_string() => Some("val1".to_string())
             },
+            None,
             vec![],
-        );
+        ).to_dnref();
         let selector = AttrSelector::new(
             "attr".to_string(),
             Some((AttrSelectorOp::Suffixed, "l1".to_string())),
@@ -512,8 +544,9 @@ mod tests {
             hashmap!{
                 "attr".to_string() => Some("val1".to_string())
             },
+            None,
             vec![],
-        );
+        ).to_dnref();
         let selector = AttrSelector::new(
             "attr".to_string(),
             Some((AttrSelectorOp::Suffixed, "al".to_string())),
@@ -531,8 +564,9 @@ mod tests {
             hashmap!{
                 "attr".to_string() => Some("vAl1".to_string())
             },
+            None,
             vec![],
-        );
+        ).to_dnref();
         let selector = AttrSelector::new(
             "attr".to_string(),
             Some((AttrSelectorOp::Suffixed, "aL1".to_string())),
@@ -550,8 +584,9 @@ mod tests {
             hashmap!{
                 "attr".to_string() => Some("http://www.example.com".to_string())
             },
+            None,
             vec![],
-        );
+        ).to_dnref();
         let selector = AttrSelector::new(
             "attr".to_string(),
             Some((AttrSelectorOp::ContainsAtLeastOne, "example".to_string())),
@@ -569,8 +604,9 @@ mod tests {
             hashmap!{
                 "attr".to_string() => Some("http://www.example.com".to_string())
             },
+            None,
             vec![],
-        );
+        ).to_dnref();
         let selector = AttrSelector::new(
             "attr".to_string(),
             Some((AttrSelectorOp::ContainsAtLeastOne, "notexample".to_string())),
@@ -588,8 +624,9 @@ mod tests {
             hashmap!{
                 "attr".to_string() => Some("http://www.ExAmplE.com".to_string())
             },
+            None,
             vec![],
-        );
+        ).to_dnref();
         let selector = AttrSelector::new(
             "attr".to_string(),
             Some((

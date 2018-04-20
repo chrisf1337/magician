@@ -6,9 +6,9 @@ mod parser;
 mod postparse;
 mod selectorparser;
 
-pub use self::postparse::{AttrSelector, AttrSelectorOp, Combinator, CssBlocks, DomNode, NthExpr,
-                          NthExprOp, PseudoClassSelector, PseudoElementSelector, Selector,
-                          SimpleSelector};
+pub use self::postparse::{AttrSelector, AttrSelectorOp, Combinator, CssBlocks, DomNode,
+                          DomNodeRef, NthExpr, NthExprOp, PseudoClassSelector,
+                          PseudoElementSelector, Selector, SimpleSelector};
 
 use std::convert::From;
 use std::fmt;
@@ -110,7 +110,7 @@ impl ElemType {
     }
 }
 
-pub fn parse_html(input: &str) -> error::Result<DomNode> {
+pub fn parse_html(input: &str) -> error::Result<DomNodeRef> {
     Ok(DomNode::from(htmlparser::HtmlParser::parse(input)?))
 }
 

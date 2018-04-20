@@ -22,72 +22,51 @@ fn test_htmlparser() {
     let mut f = File::open(test_dir.join("simple.html")).expect("file not found");
     let mut input = String::new();
     f.read_to_string(&mut input).expect("read");
-    assert_eq!(
-        parse_html(&input),
-        Ok(DomNode::new(
-            ElemType::Html,
-            None,
-            hashset!{},
-            hashmap!{},
-            vec![
-                DomNode::new(
-                    ElemType::Body,
-                    None,
-                    hashset!{},
-                    hashmap!{},
-                    vec![
-                        DomNode::new(
-                            ElemType::H1,
-                            None,
-                            hashset!{},
-                            hashmap!{},
-                            vec![
-                                DomNode::new(
-                                    ElemType::Text("My First Heading".to_string()),
-                                    None,
-                                    hashset!{},
-                                    hashmap![],
-                                    vec![],
-                                ),
-                            ],
-                        ),
-                        DomNode::new(
-                            ElemType::A,
-                            None,
-                            hashset!{},
-                            hashmap! {
-                                "href".to_string() => Some("https://www.google.com".to_string())
-                            },
-                            vec![
-                                DomNode::new(
-                                    ElemType::Text("Link".to_string()),
-                                    None,
-                                    hashset!{},
-                                    hashmap!{},
-                                    vec![],
-                                ),
-                            ],
-                        ),
-                        DomNode::new(
-                            ElemType::P,
-                            None,
-                            hashset!{},
-                            hashmap!{},
-                            vec![
-                                DomNode::new(
-                                    ElemType::Text("My first paragraph.".to_string()),
-                                    None,
-                                    hashset!{},
-                                    hashmap!{},
-                                    vec![],
-                                ),
-                            ],
-                        ),
-                    ],
-                ),
-            ]
-        ))
-    );
+    let html = DomNode::new(ElemType::Html, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref();
+    let body = DomNode::new(ElemType::Body, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref();
+    let h1 = DomNode::new(ElemType::H1, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref();
+    let h1_text = DomNode::new(
+        ElemType::Text("My First Heading".to_string()),
+        None,
+        hashset!{},
+        hashmap!{},
+        None,
+        vec![],
+    ).to_dnref();
+    DomNode::add_child(&h1, h1_text);
+    let a = DomNode::new(
+        ElemType::A,
+        None,
+        hashset!{},
+        hashmap! {
+            "href".to_string() => Some("https://www.google.com".to_string())
+        },
+        None,
+        vec![],
+    ).to_dnref();
+    let a_text = DomNode::new(
+        ElemType::Text("Link".to_string()),
+        None,
+        hashset!{},
+        hashmap!{},
+        None,
+        vec![],
+    ).to_dnref();
+    DomNode::add_child(&a, a_text);
+    let p = DomNode::new(ElemType::P, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref();
+    let p_text = DomNode::new(
+        ElemType::Text("My first paragraph.".to_string()),
+        None,
+        hashset!{},
+        hashmap!{},
+        None,
+        vec![],
+    ).to_dnref();
+    DomNode::add_child(&p, p_text);
+
+    DomNode::add_children(&body, vec![h1, a, p]);
+    DomNode::add_child(&html, body);
+    assert_eq!(parse_html(&input), Ok(html));
 }
 
 #[test]
