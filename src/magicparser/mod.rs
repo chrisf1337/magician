@@ -111,7 +111,7 @@ impl ElemType {
 }
 
 pub fn parse_html(input: &str) -> error::Result<DomNodeRef> {
-    Ok(DomNode::from(htmlparser::HtmlParser::parse(input)?))
+    Ok(DomNodeRef::from(htmlparser::HtmlParser::parse(input)?))
 }
 
 pub fn parse_css(input: &str) -> error::Result<CssBlocks> {

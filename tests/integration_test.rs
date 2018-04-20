@@ -33,7 +33,7 @@ fn test_htmlparser() {
         None,
         vec![],
     ).to_dnref();
-    DomNode::add_child(&h1, h1_text);
+    h1.add_child(h1_text);
     let a = DomNode::new(
         ElemType::A,
         None,
@@ -52,7 +52,7 @@ fn test_htmlparser() {
         None,
         vec![],
     ).to_dnref();
-    DomNode::add_child(&a, a_text);
+    a.add_child(a_text);
     let p = DomNode::new(ElemType::P, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref();
     let p_text = DomNode::new(
         ElemType::Text("My first paragraph.".to_string()),
@@ -62,10 +62,10 @@ fn test_htmlparser() {
         None,
         vec![],
     ).to_dnref();
-    DomNode::add_child(&p, p_text);
+    p.add_child(p_text);
 
-    DomNode::add_children(&body, vec![h1, a, p]);
-    DomNode::add_child(&html, body);
+    body.add_children(vec![h1, a, p]);
+    html.add_child(body);
     assert_eq!(parse_html(&input), Ok(html));
 }
 

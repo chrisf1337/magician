@@ -7,11 +7,15 @@ use magicparser::selectorparser::{AttrSelector as SPAttrSelector,
                                   PseudoElementSelector as SPPseudoElementSelector,
                                   Selector as SPSelector, SimpleSelector as SPSimpleSelector};
 use magicparser::{ElemType, Token};
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell, RefMut};
 use std::collections::{HashMap, HashSet};
+use std::convert::From;
 use std::rc::{Rc, Weak};
 
-pub type DomNodeRef = Rc<RefCell<DomNode>>;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DomNodeRef {
+    ptr: Rc<RefCell<DomNode>>,
+}
 
 #[derive(Debug, Clone)]
 pub struct DomNode {
@@ -20,13 +24,13 @@ pub struct DomNode {
     pub classes: HashSet<String>,
     pub attrs: HashMap<String, Option<String>>,
     pub parent: Option<Weak<RefCell<DomNode>>>,
-    pub children: Vec<Rc<RefCell<DomNode>>>,
+    pub children: Vec<DomNodeRef>,
 }
 
 impl PartialEq for DomNode {
     fn eq(&self, other: &DomNode) -> bool {
-        self.elem_type == other.elem_type && self.attrs == other.attrs
-            && self.children == other.children
+        self.elem_type == other.elem_type && self.id == other.id && self.classes == other.classes
+            && self.attrs == other.attrs && self.children == other.children
     }
 }
 
@@ -39,7 +43,7 @@ impl DomNode {
         classes: HashSet<String>,
         attrs: HashMap<String, Option<String>>,
         parent: Option<Weak<RefCell<DomNode>>>,
-        children: Vec<Rc<RefCell<DomNode>>>,
+        children: Vec<DomNodeRef>,
     ) -> DomNode {
         DomNode {
             elem_type,
@@ -52,22 +56,58 @@ impl DomNode {
     }
 
     pub fn to_dnref(self) -> DomNodeRef {
-        Rc::new(RefCell::new(self))
+        DomNodeRef {
+            ptr: Rc::new(RefCell::new(self)),
+        }
+    }
+}
+
+impl DomNodeRef {
+    pub fn borrow_mut(&self) -> RefMut<DomNode> {
+        self.ptr.borrow_mut()
     }
 
-    pub fn add_child(node: &DomNodeRef, child: DomNodeRef) {
+    pub fn borrow(&self) -> Ref<DomNode> {
+        self.ptr.borrow()
+    }
+
+    pub fn upgrade_from_weak(weak: &Weak<RefCell<DomNode>>) -> Option<DomNodeRef> {
+        weak.upgrade().map(|ptr| DomNodeRef { ptr })
+    }
+
+    pub fn add_child<'a>(&'a self, child: DomNodeRef) -> &'a Self {
+        let node = &self.ptr;
         child.borrow_mut().parent = Some(Rc::downgrade(node));
         let mut node = node.borrow_mut();
         node.children.push(child);
+        self
     }
 
-    pub fn add_children(node: &DomNodeRef, children: Vec<DomNodeRef>) {
+    pub fn add_children<'a>(&'a self, children: Vec<DomNodeRef>) -> &'a Self {
         for child in children {
-            DomNode::add_child(node, child);
+            self.add_child(child);
         }
+        self
     }
 
-    pub fn from(
+    pub fn child_index(&self) -> Option<usize> {
+        let parent = &self.ptr.borrow().parent;
+        if let Some(ref parent) = parent {
+            if let Some(ref parent) = Self::upgrade_from_weak(parent) {
+                println!("parent: {:?}", parent);
+                return parent
+                    .borrow()
+                    .children
+                    .iter()
+                    .position(|child| child == self);
+            }
+        }
+        None
+    }
+}
+
+impl From<HPDomNode> for DomNodeRef {
+    fn from(
         HPDomNode {
             elem_type,
             attrs,
@@ -105,11 +145,11 @@ impl DomNode {
 
         let node = DomNode::new(elem_type, id, classes, deduped_attrs, None, vec![]).to_dnref();
 
-        let children: Vec<_> = children
+        let children: Vec<DomNodeRef> = children
             .iter()
-            .map(|child| DomNode::from(child.clone()))
+            .map(|child| DomNodeRef::from(child.clone()))
             .collect();
-        DomNode::add_children(&node, children);
+        node.add_children(children);
         node
     }
 }
@@ -481,8 +521,8 @@ mod tests {
             None,
             vec![],
         ).to_dnref();
-        DomNode::add_children(&node, vec![child1, child2]);
-        assert_eq!(DomNode::from(parser_dom_node), node);
+        node.add_children(vec![child1, child2]);
+        assert_eq!(DomNodeRef::from(parser_dom_node), node);
     }
 
     #[test]
@@ -644,5 +684,80 @@ mod tests {
                 },
             )])
         );
+    }
+
+    #[test]
+    fn test_child_index1() {
+        let parent =
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref();
+        parent.add_children(vec![
+            DomNode::new(
+                ElemType::A,
+                Some("0".to_string()),
+                hashset!{},
+                hashmap!{},
+                None,
+                vec![],
+            ).to_dnref(),
+            DomNode::new(
+                ElemType::A,
+                Some("1".to_string()),
+                hashset!{},
+                hashmap!{},
+                None,
+                vec![],
+            ).to_dnref(),
+        ]);
+        assert_eq!(parent.borrow().children[1].child_index(), Some(1));
+    }
+
+    #[test]
+    fn test_child_index2() {
+        let parent =
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref();
+        parent.add_children(vec![
+            DomNode::new(
+                ElemType::A,
+                Some("0".to_string()),
+                hashset!{"cl1".to_string()},
+                hashmap!{"class".to_string() => Some("cl1".to_string())},
+                None,
+                vec![],
+            ).to_dnref(),
+            DomNode::new(
+                ElemType::A,
+                Some("1".to_string()),
+                hashset!{},
+                hashmap!{},
+                None,
+                vec![],
+            ).to_dnref(),
+        ]);
+        assert_eq!(parent.borrow().children[0].child_index(), Some(0));
+    }
+
+    #[test]
+    fn test_child_index3() {
+        let parent =
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref();
+        parent.add_children(vec![
+            DomNode::new(
+                ElemType::A,
+                Some("0".to_string()),
+                hashset!{"cl1".to_string()},
+                hashmap!{"class".to_string() => Some("cl1".to_string())},
+                None,
+                vec![],
+            ).to_dnref(),
+            DomNode::new(
+                ElemType::A,
+                Some("1".to_string()),
+                hashset!{},
+                hashmap!{},
+                None,
+                vec![],
+            ).to_dnref(),
+        ]);
+        assert_eq!(parent.child_index(), None);
     }
 }
