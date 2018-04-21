@@ -118,10 +118,23 @@ fn matches_attr_selector(
 
 fn matches_pseudo_class_selector(dom_node: &DomNodeRef, selector: &PseudoClassSelector) -> bool {
     match selector {
+        PseudoClassSelector::Matches(ref sel) => matches(dom_node, sel),
+        PseudoClassSelector::Not(ref sel) => !matches(dom_node, sel),
+        PseudoClassSelector::FirstChild => dom_node.child_index().unwrap_or(1) == 1,
+        PseudoClassSelector::LastChild => {
+            let parent = dom_node.parent();
+            dom_node.child_index().unwrap_or(1) == if let Some(ref parent) = parent {
+                let siblings = &parent.borrow().children;
+                siblings.len()
+            } else {
+                1
+            }
+        }
         PseudoClassSelector::NthChild(ref expr) => {
             let child_index = dom_node.child_index().unwrap_or(1);
             expr.matches(child_index)
         }
+        // TODO: Implement other pseudo-class selectors (see README)
         _ => unimplemented!(),
     }
 }
@@ -719,6 +732,82 @@ mod tests {
             &selector
         ));
         assert!(!matches_pseudo_class_selector(
+            &dom_node.borrow().children[3],
+            &selector
+        ));
+    }
+
+    #[test]
+    fn test_matches_first_child1() {
+        let dom_node = DomNode::new(
+            ElemType::A,
+            None,
+            hashset!{},
+            hashmap!{
+                "attr".to_string() => Some("http://www.ExAmplE.com".to_string())
+            },
+            None,
+            vec![],
+        ).to_dnref();
+        dom_node.add_children(vec![
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+        ]);
+
+        let selector = PseudoClassSelector::FirstChild;
+        assert!(matches_pseudo_class_selector(
+            &dom_node.borrow().children[0],
+            &selector
+        ));
+        assert!(!matches_pseudo_class_selector(
+            &dom_node.borrow().children[1],
+            &selector
+        ));
+        assert!(!matches_pseudo_class_selector(
+            &dom_node.borrow().children[2],
+            &selector
+        ));
+        assert!(!matches_pseudo_class_selector(
+            &dom_node.borrow().children[3],
+            &selector
+        ));
+    }
+
+    #[test]
+    fn test_matches_last_child1() {
+        let dom_node = DomNode::new(
+            ElemType::A,
+            None,
+            hashset!{},
+            hashmap!{
+                "attr".to_string() => Some("http://www.ExAmplE.com".to_string())
+            },
+            None,
+            vec![],
+        ).to_dnref();
+        dom_node.add_children(vec![
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+        ]);
+
+        let selector = PseudoClassSelector::LastChild;
+        assert!(!matches_pseudo_class_selector(
+            &dom_node.borrow().children[0],
+            &selector
+        ));
+        assert!(!matches_pseudo_class_selector(
+            &dom_node.borrow().children[1],
+            &selector
+        ));
+        assert!(!matches_pseudo_class_selector(
+            &dom_node.borrow().children[2],
+            &selector
+        ));
+        assert!(matches_pseudo_class_selector(
             &dom_node.borrow().children[3],
             &selector
         ));

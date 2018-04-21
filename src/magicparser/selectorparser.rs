@@ -115,11 +115,15 @@ pub(super) enum NthExpr {
 #[derive(Debug, Eq, PartialEq)]
 pub(super) enum PseudoClassSelector {
     Active(Pos),
+    FirstChild(Pos),
+    FirstOfType(Pos),
     Hover(Pos),
     // experimental: Dir,
     // experimental: Host,
     // experimental: HostContext,
     Lang(Pos, Token),
+    LastChild(Pos),
+    LastOfType(Pos),
     Link(Pos),
     Matches(Pos, Box<Selector>),
     Visited(Pos),
@@ -435,8 +439,10 @@ impl SelectorParser {
                     Token::ElemIdentifier(_, sel_name) => {
                         match sel_name.to_ascii_lowercase().as_ref() {
                             "active" => Active(pos),
+                            "first-child" => FirstChild(pos),
                             "hover" => Hover(pos),
                             "lang" => Lang(pos, self.parse_pcs_lang_args()?),
+                            "last-child" => LastChild(pos),
                             "link" => Link(pos),
                             "matches" => Matches(pos, self.parse_pcs_selector_list_args()?),
                             "not" => Not(pos, self.parse_pcs_selector_list_args()?),

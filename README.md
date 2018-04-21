@@ -26,6 +26,11 @@ cargo test
 - [x] Add tests for [`postparse.rs`](src/magicparser/postparse.rs)
 - [x] CSS post-parse pass
 - [ ] Match selectors to DOM nodes
+  - [ ] Implement more pseudo-class selectors. Useful ones left to implement might be
+    - [ ] `:link`, `:visited`, `:hover`, `:active`
+    - [ ] `:first-/last-of-type`
+    - [ ] `:nth-*()`
+    - [ ] `:only-child/-of-type`
 - [ ] Calculate selector specificity
 - [ ] Link Rust lib to Swift frontend
   - [ ] Write Swift wrapper for lib

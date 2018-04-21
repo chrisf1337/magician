@@ -78,8 +78,12 @@ impl DomNodeRef {
         self.ptr.borrow()
     }
 
-    pub fn upgrade_from_weak(weak: &Weak<RefCell<DomNode>>) -> Option<DomNodeRef> {
-        weak.upgrade().map(|ptr| DomNodeRef { ptr })
+    pub fn parent(&self) -> Option<DomNodeRef> {
+        if let Some(ref parent) = self.borrow().parent {
+            parent.upgrade().map(|ptr| DomNodeRef { ptr })
+        } else {
+            None
+        }
     }
 
     pub fn add_child<'a>(&'a self, child: DomNodeRef) -> &'a Self {
@@ -99,18 +103,16 @@ impl DomNodeRef {
 
     // Starts at 1
     pub fn child_index(&self) -> Option<usize> {
-        let parent = &self.ptr.borrow().parent;
-        if let Some(ref parent) = parent {
-            if let Some(ref parent) = Self::upgrade_from_weak(parent) {
-                return parent
-                    .borrow()
-                    .children
-                    .iter()
-                    .position(|child| child == self)
-                    .map(|x| x + 1);
-            }
+        if let Some(parent) = self.parent() {
+            parent
+                .borrow()
+                .children
+                .iter()
+                .position(|child| child == self)
+                .map(|x| x + 1)
+        } else {
+            None
         }
-        None
     }
 
     pub fn eq_ignore_id_num(&self, other: &DomNodeRef) -> bool {
@@ -308,7 +310,11 @@ pub enum PseudoClassSelector {
     // experimental: Dir,
     // experimental: Host,
     // experimental: HostContext,
+    FirstChild,
+    FirstOfType,
     Lang(String),
+    LastChild,
+    LastOfType,
     Link,
     Matches(Box<Selector>),
     Visited,
@@ -324,8 +330,12 @@ impl From<SPPseudoClassSelector> for PseudoClassSelector {
         use self::SPPseudoClassSelector::*;
         match sel {
             Active(_) => PseudoClassSelector::Active,
+            FirstChild(_) => PseudoClassSelector::FirstChild,
+            FirstOfType(_) => PseudoClassSelector::FirstOfType,
             Hover(_) => PseudoClassSelector::Hover,
             Lang(_, tok) => PseudoClassSelector::Lang(tok.to_string()),
+            LastChild(_) => PseudoClassSelector::LastChild,
+            LastOfType(_) => PseudoClassSelector::LastOfType,
             Link(_) => PseudoClassSelector::Link,
             Matches(_, sel) => PseudoClassSelector::Matches(Box::new(Selector::from(*sel))),
             Visited(_) => PseudoClassSelector::Visited,
