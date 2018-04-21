@@ -62,6 +62,7 @@ pub enum ElemType {
     Head,
     Body,
     Img,
+    Link,
     H1,
     P,
     A,
@@ -76,6 +77,7 @@ impl<'a> From<&'a str> for ElemType {
             "head" => ElemType::Head,
             "body" => ElemType::Body,
             "img" => ElemType::Img,
+            "link" => ElemType::Link,
             "h1" => ElemType::H1,
             "p" => ElemType::P,
             "a" => ElemType::A,
@@ -92,6 +94,7 @@ impl<'a> From<&'a String> for ElemType {
             "head" => ElemType::Head,
             "body" => ElemType::Body,
             "img" => ElemType::Img,
+            "link" => ElemType::Link,
             "h1" => ElemType::H1,
             "p" => ElemType::P,
             "a" => ElemType::A,
@@ -104,7 +107,7 @@ impl<'a> From<&'a String> for ElemType {
 impl ElemType {
     pub fn is_void_elem(&self) -> bool {
         match self {
-            ElemType::Img => true,
+            ElemType::Img | ElemType::Link => true,
             _ => false,
         }
     }
