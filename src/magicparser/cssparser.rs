@@ -1,8 +1,8 @@
-use magicparser::Pos;
 use magicparser::error::{Error, Result};
 use magicparser::lexer::Lexer;
 use magicparser::parser::Parser;
 use magicparser::selectorparser::{Selector, SelectorParser};
+use magicparser::Pos;
 
 type DeclBlock = Vec<(Token, Token)>;
 type IntermediateBlock = (Token, DeclBlock);
@@ -59,18 +59,7 @@ impl CssParser {
         self.lexer.consume_whitespace()?;
         let start_pos = self.pos();
         let mut property: Vec<char> = vec![];
-        match self.lexer.peek_char() {
-            Ok((_, ch)) => if ch.is_ascii_alphabetic() {
-                property.push(ch);
-                self.lexer.consume_char()?;
-            } else {
-                return Err(Error::Unexpected(
-                    start_pos,
-                    "expected property".to_string(),
-                ));
-            },
-            Err(err) => return Err(err),
-        }
+
         while let Ok((_, ch)) = self.lexer.peek_char() {
             if ch.is_ascii_alphanumeric() || ch == '-' {
                 property.push(ch);
@@ -176,9 +165,9 @@ impl Parser<Error> for CssParser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use magicparser::DEFAULT_CARGO_MANIFEST_DIR;
-    use magicparser::ElemType;
     use magicparser::selectorparser::*;
+    use magicparser::ElemType;
+    use magicparser::DEFAULT_CARGO_MANIFEST_DIR;
     use std::env;
     use std::fs::File;
     use std::io::prelude::*;
@@ -218,6 +207,25 @@ mod tests {
             ))
         );
         assert_eq!(parser.pos(), (1, 1, 2));
+    }
+
+    #[test]
+    fn test_parse_property() {
+        let mut parser = CssParser::new("font-size: 2em;");
+        let res = parser.parse_property();
+        assert_eq!(res, Ok(Token::Property((0, 1, 1), "font-size".to_string())));
+        assert_eq!(parser.pos(), (9, 1, 10));
+    }
+
+    #[test]
+    fn test_parse_property_starting_with_dash() {
+        let mut parser = CssParser::new("-font-size: 2em;");
+        let res = parser.parse_property();
+        assert_eq!(
+            res,
+            Ok(Token::Property((0, 1, 1), "-font-size".to_string()))
+        );
+        assert_eq!(parser.pos(), (10, 1, 11));
     }
 
     #[test]
@@ -286,12 +294,10 @@ mod tests {
         let res = parser.parse_decl_block();
         assert_eq!(
             res,
-            Ok(vec![
-                (
-                    Token::Property((2, 1, 3), "aa".to_string()),
-                    Token::Value((6, 1, 7), "bb".to_string()),
-                ),
-            ])
+            Ok(vec![(
+                Token::Property((2, 1, 3), "aa".to_string()),
+                Token::Value((6, 1, 7), "bb".to_string()),
+            )])
         );
         assert_eq!(parser.pos(), (9, 1, 10));
     }
@@ -302,12 +308,10 @@ mod tests {
         let res = parser.parse_decl_block();
         assert_eq!(
             res,
-            Ok(vec![
-                (
-                    Token::Property((2, 1, 3), "aa".to_string()),
-                    Token::Value((6, 1, 7), "bb".to_string()),
-                ),
-            ])
+            Ok(vec![(
+                Token::Property((2, 1, 3), "aa".to_string()),
+                Token::Value((6, 1, 7), "bb".to_string()),
+            )])
         );
         assert_eq!(parser.pos(), (13, 2, 3));
     }
@@ -342,12 +346,10 @@ mod tests {
             res,
             Ok((
                 Token::Selector((0, 1, 1), "a".to_string()),
-                vec![
-                    (
-                        Token::Property((4, 1, 5), "font-size".to_string()),
-                        Token::Value((15, 1, 16), "2em".to_string()),
-                    ),
-                ]
+                vec![(
+                    Token::Property((4, 1, 5), "font-size".to_string()),
+                    Token::Value((15, 1, 16), "2em".to_string()),
+                )]
             ))
         );
         assert_eq!(parser.pos(), (21, 1, 22));
@@ -415,12 +417,10 @@ mod tests {
                 ),
                 (
                     Token::Selector((90, 7, 1), "a:hover, a:active".to_string()),
-                    vec![
-                        (
-                            Token::Property((112, 8, 3), "background-color".to_string()),
-                            Token::Value((130, 8, 21), "red".to_string()),
-                        ),
-                    ],
+                    vec![(
+                        Token::Property((112, 8, 3), "background-color".to_string()),
+                        Token::Value((130, 8, 21), "red".to_string()),
+                    )],
                 ),
             ])
         );
@@ -501,12 +501,10 @@ mod tests {
                             Selector::PseudoClass(PseudoClassSelector::Active((100, 7, 11))),
                         ]),
                     ]),
-                    vec![
-                        (
-                            Token::Property((112, 8, 3), "background-color".to_string()),
-                            Token::Value((130, 8, 21), "red".to_string()),
-                        ),
-                    ],
+                    vec![(
+                        Token::Property((112, 8, 3), "background-color".to_string()),
+                        Token::Value((130, 8, 21), "red".to_string()),
+                    )],
                 ),
             ]))
         );
@@ -588,12 +586,10 @@ mod tests {
                             Selector::PseudoClass(PseudoClassSelector::Active((108, 18, 2))),
                         ]),
                     ]),
-                    vec![
-                        (
-                            Token::Property((118, 18, 12), "background-color".to_string()),
-                            Token::Value((136, 18, 30), "red".to_string()),
-                        ),
-                    ],
+                    vec![(
+                        Token::Property((118, 18, 12), "background-color".to_string()),
+                        Token::Value((136, 18, 30), "red".to_string()),
+                    )],
                 ),
             ]))
         );

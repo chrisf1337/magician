@@ -1,5 +1,5 @@
-use magicparser::Pos;
 use magicparser::error::{Error, Result};
+use magicparser::Pos;
 
 pub struct Lexer {
     input: Vec<char>,

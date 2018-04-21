@@ -453,7 +453,7 @@ impl From<CPCssBlocks> for CssBlocks {
     fn from(CPCssBlocks(blocks): CPCssBlocks) -> Self {
         let mut blks = vec![];
         for (selector, decl_block) in blocks {
-            // Check if selector is already in blks
+            // Check if selector is already in blks, and if so, consolidate them into one
             let sel = Selector::from(selector);
             match blks.iter().position(
                 |&(ref blks_sel, _): &(Selector, HashMap<String, String>)| *blks_sel == sel,
