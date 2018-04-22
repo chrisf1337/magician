@@ -127,7 +127,7 @@ impl CssParser {
         Ok((selector, decl_block))
     }
 
-    fn parse_blocks(&mut self) -> Vec<IntermediateBlock> {
+    fn parse_blocks(&mut self) -> (Vec<IntermediateBlock>, Vec<Error>) {
         let mut blocks = vec![];
         let mut errs = vec![];
         loop {
@@ -137,10 +137,7 @@ impl CssParser {
                     let _ = self.lexer.consume_whitespace();
                 }
                 Err(Error::Eof(..)) => {
-                    for err in errs {
-                        eprintln!("warning: CssParser::parse_blocks(): {:?}", err);
-                    }
-                    return blocks;
+                    return (blocks, errs);
                 }
                 Err(err) => {
                     errs.push(err);
@@ -151,24 +148,21 @@ impl CssParser {
         }
     }
 
-    pub(super) fn parse(input: &str) -> CssBlocks {
+    pub(super) fn parse(input: &str) -> (CssBlocks, Vec<Error>) {
         let mut parser = CssParser::new(input);
-        let int_blocks = parser.parse_blocks();
+        let (int_blocks, mut errs) = parser.parse_blocks();
         let mut blocks = vec![];
-        let mut errs = vec![];
         for (token, decl_block) in int_blocks {
             match token {
                 Token::Selector(pos, sel_str) => match SelectorParser::parse(&sel_str, pos) {
                     Ok(sel) => blocks.push((sel, decl_block)),
-                    Err(err) => errs.push((sel_str, err)),
+                    Err(err) => errs.push(err),
                 },
                 _ => unreachable!(),
             }
         }
-        for err in errs {
-            eprintln!("warning: CssParser::parse(): {:?}", err);
-        }
-        CssBlocks(blocks)
+
+        (CssBlocks(blocks), errs)
     }
 }
 
@@ -395,10 +389,13 @@ mod tests {
         let res = parser.parse_blocks();
         assert_eq!(
             res,
-            vec![
-                (Token::Selector((0, 1, 1), "a".to_string()), vec![]),
-                (Token::Selector((5, 1, 6), "b".to_string()), vec![]),
-            ]
+            (
+                vec![
+                    (Token::Selector((0, 1, 1), "a".to_string()), vec![]),
+                    (Token::Selector((5, 1, 6), "b".to_string()), vec![]),
+                ],
+                vec![]
+            )
         );
         assert_eq!(parser.pos(), (9, 1, 10));
     }
@@ -408,16 +405,25 @@ mod tests {
         let res = CssParser::parse("a { 1 } a:f {} div {}");
         assert_eq!(
             res,
-            CssBlocks(vec![(
-                Selector::Simple(SimpleSelector::new(
-                    (15, 1, 16),
-                    Some(ElemType::Div),
-                    None,
+            (
+                CssBlocks(vec![(
+                    Selector::Simple(SimpleSelector::new(
+                        (15, 1, 16),
+                        Some(ElemType::Div),
+                        None,
+                        vec![],
+                        false,
+                    )),
                     vec![],
-                    false,
-                )),
-                vec![],
-            )])
+                )]),
+                vec![
+                    Error::Unexpected((6, 1, 7), "expected ':', got '}'".to_string()),
+                    Error::Unexpected(
+                        (9, 1, 10),
+                        "unexpected char ':' at the end of selector".to_string(),
+                    ),
+                ]
+            )
         );
     }
 
@@ -435,32 +441,35 @@ mod tests {
         let res = parser.parse_blocks();
         assert_eq!(
             res,
-            vec![
-                (
-                    Token::Selector((0, 1, 1), "a:link, a:visited".to_string()),
-                    vec![
-                        (
-                            Token::Property((22, 2, 3), "background-color".to_string()),
-                            Token::Value((40, 2, 21), "#f44336".to_string()),
-                        ),
-                        (
-                            Token::Property((51, 3, 3), "color".to_string()),
-                            Token::Value((58, 3, 10), "white".to_string()),
-                        ),
-                        (
-                            Token::Property((67, 4, 3), "padding".to_string()),
-                            Token::Value((76, 4, 12), "14px 25px".to_string()),
-                        ),
-                    ],
-                ),
-                (
-                    Token::Selector((90, 7, 1), "a:hover, a:active".to_string()),
-                    vec![(
-                        Token::Property((112, 8, 3), "background-color".to_string()),
-                        Token::Value((130, 8, 21), "red".to_string()),
-                    )],
-                ),
-            ]
+            (
+                vec![
+                    (
+                        Token::Selector((0, 1, 1), "a:link, a:visited".to_string()),
+                        vec![
+                            (
+                                Token::Property((22, 2, 3), "background-color".to_string()),
+                                Token::Value((40, 2, 21), "#f44336".to_string()),
+                            ),
+                            (
+                                Token::Property((51, 3, 3), "color".to_string()),
+                                Token::Value((58, 3, 10), "white".to_string()),
+                            ),
+                            (
+                                Token::Property((67, 4, 3), "padding".to_string()),
+                                Token::Value((76, 4, 12), "14px 25px".to_string()),
+                            ),
+                        ],
+                    ),
+                    (
+                        Token::Selector((90, 7, 1), "a:hover, a:active".to_string()),
+                        vec![(
+                            Token::Property((112, 8, 3), "background-color".to_string()),
+                            Token::Value((130, 8, 21), "red".to_string()),
+                        )],
+                    ),
+                ],
+                vec![]
+            )
         );
     }
 
@@ -477,74 +486,77 @@ mod tests {
         let res = CssParser::parse(&input);
         assert_eq!(
             res,
-            CssBlocks(vec![
-                (
-                    Selector::Group(vec![
-                        Selector::Seq(vec![
-                            Selector::Simple(SimpleSelector::new(
-                                (0, 1, 1),
-                                Some(ElemType::A),
-                                None,
-                                vec![],
-                                false,
-                            )),
-                            Selector::PseudoClass(PseudoClassSelector::Link((1, 1, 2))),
+            (
+                CssBlocks(vec![
+                    (
+                        Selector::Group(vec![
+                            Selector::Seq(vec![
+                                Selector::Simple(SimpleSelector::new(
+                                    (0, 1, 1),
+                                    Some(ElemType::A),
+                                    None,
+                                    vec![],
+                                    false,
+                                )),
+                                Selector::PseudoClass(PseudoClassSelector::Link((1, 1, 2))),
+                            ]),
+                            Selector::Seq(vec![
+                                Selector::Simple(SimpleSelector::new(
+                                    (8, 1, 9),
+                                    Some(ElemType::A),
+                                    None,
+                                    vec![],
+                                    false,
+                                )),
+                                Selector::PseudoClass(PseudoClassSelector::Visited((9, 1, 10))),
+                            ]),
                         ]),
-                        Selector::Seq(vec![
-                            Selector::Simple(SimpleSelector::new(
-                                (8, 1, 9),
-                                Some(ElemType::A),
-                                None,
-                                vec![],
-                                false,
-                            )),
-                            Selector::PseudoClass(PseudoClassSelector::Visited((9, 1, 10))),
+                        vec![
+                            (
+                                Token::Property((22, 2, 3), "background-color".to_string()),
+                                Token::Value((40, 2, 21), "#f44336".to_string()),
+                            ),
+                            (
+                                Token::Property((51, 3, 3), "color".to_string()),
+                                Token::Value((58, 3, 10), "white".to_string()),
+                            ),
+                            (
+                                Token::Property((67, 4, 3), "padding".to_string()),
+                                Token::Value((76, 4, 12), "14px 25px".to_string()),
+                            ),
+                        ],
+                    ),
+                    (
+                        Selector::Group(vec![
+                            Selector::Seq(vec![
+                                Selector::Simple(SimpleSelector::new(
+                                    (90, 7, 1),
+                                    Some(ElemType::A),
+                                    None,
+                                    vec![],
+                                    false,
+                                )),
+                                Selector::PseudoClass(PseudoClassSelector::Hover((91, 7, 2))),
+                            ]),
+                            Selector::Seq(vec![
+                                Selector::Simple(SimpleSelector::new(
+                                    (99, 7, 10),
+                                    Some(ElemType::A),
+                                    None,
+                                    vec![],
+                                    false,
+                                )),
+                                Selector::PseudoClass(PseudoClassSelector::Active((100, 7, 11))),
+                            ]),
                         ]),
-                    ]),
-                    vec![
-                        (
-                            Token::Property((22, 2, 3), "background-color".to_string()),
-                            Token::Value((40, 2, 21), "#f44336".to_string()),
-                        ),
-                        (
-                            Token::Property((51, 3, 3), "color".to_string()),
-                            Token::Value((58, 3, 10), "white".to_string()),
-                        ),
-                        (
-                            Token::Property((67, 4, 3), "padding".to_string()),
-                            Token::Value((76, 4, 12), "14px 25px".to_string()),
-                        ),
-                    ],
-                ),
-                (
-                    Selector::Group(vec![
-                        Selector::Seq(vec![
-                            Selector::Simple(SimpleSelector::new(
-                                (90, 7, 1),
-                                Some(ElemType::A),
-                                None,
-                                vec![],
-                                false,
-                            )),
-                            Selector::PseudoClass(PseudoClassSelector::Hover((91, 7, 2))),
-                        ]),
-                        Selector::Seq(vec![
-                            Selector::Simple(SimpleSelector::new(
-                                (99, 7, 10),
-                                Some(ElemType::A),
-                                None,
-                                vec![],
-                                false,
-                            )),
-                            Selector::PseudoClass(PseudoClassSelector::Active((100, 7, 11))),
-                        ]),
-                    ]),
-                    vec![(
-                        Token::Property((112, 8, 3), "background-color".to_string()),
-                        Token::Value((130, 8, 21), "red".to_string()),
-                    )],
-                ),
-            ])
+                        vec![(
+                            Token::Property((112, 8, 3), "background-color".to_string()),
+                            Token::Value((130, 8, 21), "red".to_string()),
+                        )],
+                    ),
+                ]),
+                vec![]
+            )
         );
     }
 
@@ -561,75 +573,78 @@ mod tests {
         let res = CssParser::parse(&input);
         assert_eq!(
             res,
-            CssBlocks(vec![
-                (
-                    Selector::Combinator(
-                        Box::new(Selector::Seq(vec![
-                            Selector::Simple(SimpleSelector::new(
-                                (0, 1, 1),
-                                Some(ElemType::A),
-                                None,
-                                vec![],
-                                false,
-                            )),
-                            Selector::PseudoClass(PseudoClassSelector::Link((1, 1, 2))),
-                        ])),
-                        Combinator::Descendant((6, 1, 7)),
-                        Box::new(Selector::Seq(vec![
-                            Selector::Simple(SimpleSelector::new(
-                                (11, 4, 3),
-                                Some(ElemType::A),
-                                None,
-                                vec![],
-                                false,
-                            )),
-                            Selector::PseudoClass(PseudoClassSelector::Visited((12, 4, 4))),
-                        ])),
+            (
+                CssBlocks(vec![
+                    (
+                        Selector::Combinator(
+                            Box::new(Selector::Seq(vec![
+                                Selector::Simple(SimpleSelector::new(
+                                    (0, 1, 1),
+                                    Some(ElemType::A),
+                                    None,
+                                    vec![],
+                                    false,
+                                )),
+                                Selector::PseudoClass(PseudoClassSelector::Link((1, 1, 2))),
+                            ])),
+                            Combinator::Descendant((6, 1, 7)),
+                            Box::new(Selector::Seq(vec![
+                                Selector::Simple(SimpleSelector::new(
+                                    (11, 4, 3),
+                                    Some(ElemType::A),
+                                    None,
+                                    vec![],
+                                    false,
+                                )),
+                                Selector::PseudoClass(PseudoClassSelector::Visited((12, 4, 4))),
+                            ])),
+                        ),
+                        vec![
+                            (
+                                Token::Property((26, 7, 3), "background-color".to_string()),
+                                Token::Value((44, 7, 21), "#f44336".to_string()),
+                            ),
+                            (
+                                Token::Property((56, 9, 3), "color".to_string()),
+                                Token::Value((63, 9, 10), "white".to_string()),
+                            ),
+                            (
+                                Token::Property((72, 10, 3), "padding".to_string()),
+                                Token::Value((81, 10, 12), "14px 25px".to_string()),
+                            ),
+                        ],
                     ),
-                    vec![
-                        (
-                            Token::Property((26, 7, 3), "background-color".to_string()),
-                            Token::Value((44, 7, 21), "#f44336".to_string()),
-                        ),
-                        (
-                            Token::Property((56, 9, 3), "color".to_string()),
-                            Token::Value((63, 9, 10), "white".to_string()),
-                        ),
-                        (
-                            Token::Property((72, 10, 3), "padding".to_string()),
-                            Token::Value((81, 10, 12), "14px 25px".to_string()),
-                        ),
-                    ],
-                ),
-                (
-                    Selector::Group(vec![
-                        Selector::Seq(vec![
-                            Selector::Simple(SimpleSelector::new(
-                                (95, 14, 1),
-                                Some(ElemType::A),
-                                None,
-                                vec![],
-                                false,
-                            )),
-                            Selector::PseudoClass(PseudoClassSelector::Hover((96, 14, 2))),
+                    (
+                        Selector::Group(vec![
+                            Selector::Seq(vec![
+                                Selector::Simple(SimpleSelector::new(
+                                    (95, 14, 1),
+                                    Some(ElemType::A),
+                                    None,
+                                    vec![],
+                                    false,
+                                )),
+                                Selector::PseudoClass(PseudoClassSelector::Hover((96, 14, 2))),
+                            ]),
+                            Selector::Seq(vec![
+                                Selector::Simple(SimpleSelector::new(
+                                    (107, 18, 1),
+                                    Some(ElemType::A),
+                                    None,
+                                    vec![],
+                                    false,
+                                )),
+                                Selector::PseudoClass(PseudoClassSelector::Active((108, 18, 2))),
+                            ]),
                         ]),
-                        Selector::Seq(vec![
-                            Selector::Simple(SimpleSelector::new(
-                                (107, 18, 1),
-                                Some(ElemType::A),
-                                None,
-                                vec![],
-                                false,
-                            )),
-                            Selector::PseudoClass(PseudoClassSelector::Active((108, 18, 2))),
-                        ]),
-                    ]),
-                    vec![(
-                        Token::Property((118, 18, 12), "background-color".to_string()),
-                        Token::Value((136, 18, 30), "red".to_string()),
-                    )],
-                ),
-            ])
+                        vec![(
+                            Token::Property((118, 18, 12), "background-color".to_string()),
+                            Token::Value((136, 18, 30), "red".to_string()),
+                        )],
+                    ),
+                ]),
+                vec![]
+            )
         );
     }
 }

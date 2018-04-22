@@ -118,5 +118,9 @@ pub fn parse_html(input: &str) -> error::Result<DomNodeRef> {
 }
 
 pub fn parse_css(input: &str) -> error::Result<CssBlocks> {
-    Ok(CssBlocks::from(cssparser::CssParser::parse(input)))
+    let (blocks, errs) = cssparser::CssParser::parse(input);
+    for err in errs {
+        eprintln!("warning: {:?}", err);
+    }
+    Ok(CssBlocks::from(blocks))
 }
