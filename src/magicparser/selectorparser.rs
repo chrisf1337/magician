@@ -182,6 +182,7 @@ pub(super) struct SelectorParser {
 }
 
 impl SelectorParser {
+    #[cfg(test)]
     fn new(input: &str) -> SelectorParser {
         Self::new_with_pos(input, (0, 1, 1))
     }

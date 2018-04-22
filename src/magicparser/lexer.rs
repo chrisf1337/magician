@@ -41,11 +41,6 @@ impl Lexer {
         }
     }
 
-    pub fn new_input(&mut self, input: &str) {
-        self.input = input.chars().collect();
-        self.set_pos((0, 1, 1));
-    }
-
     pub fn set_pos(&mut self, pos: Pos) {
         self.index = pos.0 - self.offset;
         self.row = pos.1;
