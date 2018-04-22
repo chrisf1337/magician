@@ -197,6 +197,18 @@ impl Lexer {
         }
     }
 
+    // Consumes until we see the char. pos() will be one after the char.
+    pub fn consume_until(&mut self, ch: char) -> Result<Pos> {
+        loop {
+            match self.consume_char() {
+                Ok((pos, c)) => if c == ch {
+                    return Ok(pos);
+                },
+                Err(err) => return Err(err),
+            }
+        }
+    }
+
     pub fn consume_whitespace(&mut self) -> Result<()> {
         let mut found_whitespace = false;
         loop {

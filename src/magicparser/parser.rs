@@ -1,9 +1,9 @@
-use magicparser::error::Error;
+use magicparser::error::{Error, MultipleErrors};
 use magicparser::lexer::Lexer;
 use magicparser::{Pos, Token};
 use std::convert::From;
 
-pub trait Parser<E: From<Error>> {
+pub trait Parser<E: From<Error> + MultipleErrors<Error>> {
     fn lexer(&mut self) -> &mut Lexer;
     fn lexer_immut(&self) -> &Lexer;
 
@@ -190,18 +190,40 @@ pub trait Parser<E: From<Error>> {
         }
     }
 
-    fn try_parsers<T>(
+    fn try_parsers_rec<T>(
         &mut self,
         parsers: &[fn(&mut Self) -> Result<T, E>],
-        err_msg: &str,
-    ) -> Result<T, E> {
+        mut errors: Vec<E>,
+    ) -> Result<T, Vec<E>> {
         if parsers.is_empty() {
-            return Err(E::from(Error::Unexpected(self.pos(), err_msg.to_string())));
+            panic!("cannot call try_parsers_rec() with no parsers!");
         }
         let parser = parsers[0];
         match self.try(parser) {
-            ok @ Ok(_) => ok,
-            Err(_) => self.try_parsers(&parsers[1..], err_msg),
+            Ok(ok) => Ok(ok),
+            Err(err) => {
+                errors.push(err);
+                if parsers.len() == 1 {
+                    // just tried last parser and it errored, so return all errors
+                    Err(errors)
+                } else {
+                    self.try_parsers_rec(&parsers[1..], errors)
+                }
+            }
+        }
+    }
+
+    fn try_parsers<T>(&mut self, parsers: &[fn(&mut Self) -> Result<T, E>]) -> Result<T, E> {
+        if parsers.is_empty() {
+            panic!("cannot call try_parsers() with no parsers!");
+        }
+        match self.try_parsers_rec(parsers, vec![]) {
+            Ok(ok) => Ok(ok),
+            Err(mut errs) => if errs.len() == 1 {
+                Err(errs.remove(0))
+            } else {
+                Err(E::from(E::combine(errs)))
+            },
         }
     }
 }

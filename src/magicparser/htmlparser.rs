@@ -80,7 +80,7 @@ impl HtmlParser {
                         Ok(_) => {
                             let parsers: Vec<ParserFn<Token>> =
                                 vec![Self::parse_string, Self::parse_value];
-                            match self.try_parsers(&parsers[..], "expected attribute value") {
+                            match self.try_parsers(&parsers[..]) {
                                 Ok(val_token) => {
                                     attributes.push((attr_id, Some(val_token)));
                                     next_start_pos = self.pos();
@@ -383,12 +383,10 @@ mod tests {
         let res = parser.parse_tag_attributes();
         assert_eq!(
             res,
-            Ok(vec![
-                (
-                    Token::AttrIdentifier((0, 1, 1), "a".to_string()),
-                    Some(Token::Str((2, 1, 3), "a".to_string())),
-                ),
-            ],)
+            Ok(vec![(
+                Token::AttrIdentifier((0, 1, 1), "a".to_string()),
+                Some(Token::Str((2, 1, 3), "a".to_string())),
+            )],)
         );
         assert_eq!(parser.pos(), (6, 1, 7));
     }
@@ -407,9 +405,10 @@ mod tests {
         let res = parser.parse_tag_attributes();
         assert_eq!(
             res,
-            Ok(vec![
-                (Token::AttrIdentifier((0, 1, 1), "a".to_string()), None),
-            ])
+            Ok(vec![(
+                Token::AttrIdentifier((0, 1, 1), "a".to_string()),
+                None,
+            )])
         );
         assert_eq!(parser.pos(), (2, 1, 3));
     }
@@ -451,9 +450,10 @@ mod tests {
         let res = parser.parse_tag_attributes();
         assert_eq!(
             res,
-            Ok(vec![
-                (Token::AttrIdentifier((0, 1, 1), "a".to_string()), None),
-            ],)
+            Ok(vec![(
+                Token::AttrIdentifier((0, 1, 1), "a".to_string()),
+                None,
+            )],)
         );
         assert_eq!(parser.pos(), (1, 1, 2));
     }
@@ -463,7 +463,7 @@ mod tests {
         let mut parser = HtmlParser::new("abc");
         let parser_fns: Vec<fn(&mut HtmlParser) -> Result<Token>> =
             vec![HtmlParser::parse_attr_identifier, HtmlParser::parse_value];
-        let res = parser.try_parsers(&parser_fns[..], "");
+        let res = parser.try_parsers(&parser_fns[..]);
         assert_eq!(res, Ok(Token::AttrIdentifier((0, 1, 1), "abc".to_string())));
         assert_eq!(parser.pos(), (3, 1, 4));
     }
@@ -473,7 +473,7 @@ mod tests {
         let mut parser = HtmlParser::new("123");
         let parser_fns: Vec<fn(&mut HtmlParser) -> Result<Token>> =
             vec![HtmlParser::parse_attr_identifier, HtmlParser::parse_value];
-        let res = parser.try_parsers(&parser_fns[..], "");
+        let res = parser.try_parsers(&parser_fns[..]);
         assert_eq!(res, Ok(Token::Value((0, 1, 1), "123".to_string())));
         assert_eq!(parser.pos(), (3, 1, 4));
     }
@@ -483,10 +483,13 @@ mod tests {
         let mut parser = HtmlParser::new("<");
         let parser_fns: Vec<fn(&mut HtmlParser) -> Result<Token>> =
             vec![HtmlParser::parse_attr_identifier, HtmlParser::parse_value];
-        let res = parser.try_parsers(&parser_fns[..], "error message");
+        let res = parser.try_parsers(&parser_fns[..]);
         assert_eq!(
             res,
-            Err(Error::Unexpected((0, 1, 1), "error message".to_string()))
+            Err(Error::Multiple(vec![
+                Error::Unexpected((0, 1, 1), "expected attribute identifier".to_string()),
+                Error::Unexpected((0, 1, 1), "expected value".to_string()),
+            ]))
         );
         assert_eq!(parser.pos(), (0, 1, 1));
     }
@@ -511,12 +514,10 @@ mod tests {
             Ok(DomNode::new(
                 (0, 1, 1),
                 ElemType::Html,
-                vec![
-                    (
-                        Token::AttrIdentifier((6, 1, 7), "a".to_string()),
-                        Some(Token::Value((8, 1, 9), "1".to_string())),
-                    ),
-                ],
+                vec![(
+                    Token::AttrIdentifier((6, 1, 7), "a".to_string()),
+                    Some(Token::Value((8, 1, 9), "1".to_string())),
+                )],
                 vec![]
             )),
         );
@@ -532,12 +533,10 @@ mod tests {
             Ok(DomNode::new(
                 (0, 1, 1),
                 ElemType::Html,
-                vec![
-                    (
-                        Token::AttrIdentifier((6, 1, 7), "a-1".to_string()),
-                        Some(Token::Value((10, 1, 11), "/home/".to_string())),
-                    ),
-                ],
+                vec![(
+                    Token::AttrIdentifier((6, 1, 7), "a-1".to_string()),
+                    Some(Token::Value((10, 1, 11), "/home/".to_string())),
+                )],
                 vec![]
             )),
         );
@@ -658,14 +657,12 @@ mod tests {
                 (0, 1, 1),
                 ElemType::Html,
                 vec![],
-                vec![
-                    DomNode::new(
-                        (6, 1, 7),
-                        ElemType::Text("hello".to_string()),
-                        vec![],
-                        vec![],
-                    ),
-                ]
+                vec![DomNode::new(
+                    (6, 1, 7),
+                    ElemType::Text("hello".to_string()),
+                    vec![],
+                    vec![],
+                )]
             ),)
         );
         assert_eq!(parser.pos(), (18, 1, 19));
@@ -681,14 +678,12 @@ mod tests {
                 (0, 1, 1),
                 ElemType::Html,
                 vec![],
-                vec![
-                    DomNode::new(
-                        (7, 1, 8),
-                        ElemType::Text("hello".to_string()),
-                        vec![],
-                        vec![],
-                    ),
-                ]
+                vec![DomNode::new(
+                    (7, 1, 8),
+                    ElemType::Text("hello".to_string()),
+                    vec![],
+                    vec![],
+                )]
             ),)
         );
         assert_eq!(parser.pos(), (23, 1, 24));
@@ -728,23 +723,21 @@ mod tests {
                 (0, 1, 1),
                 ElemType::Html,
                 vec![],
-                vec![
-                    DomNode::new(
-                        (8, 1, 9),
-                        ElemType::Body,
-                        vec![
-                            (
-                                Token::AttrIdentifier((14, 1, 15), "a".to_string()),
-                                Some(Token::Str((16, 1, 17), "b".to_string())),
-                            ),
-                            (
-                                Token::AttrIdentifier((21, 1, 22), "c".to_string()),
-                                Some(Token::Str((23, 1, 24), "d".to_string())),
-                            ),
-                        ],
-                        vec![],
-                    ),
-                ]
+                vec![DomNode::new(
+                    (8, 1, 9),
+                    ElemType::Body,
+                    vec![
+                        (
+                            Token::AttrIdentifier((14, 1, 15), "a".to_string()),
+                            Some(Token::Str((16, 1, 17), "b".to_string())),
+                        ),
+                        (
+                            Token::AttrIdentifier((21, 1, 22), "c".to_string()),
+                            Some(Token::Str((23, 1, 24), "d".to_string())),
+                        ),
+                    ],
+                    vec![],
+                )]
             ),)
         );
         assert_eq!(parser.pos(), (43, 1, 44));
@@ -759,12 +752,10 @@ mod tests {
             Ok(DomNode::new(
                 (0, 1, 1),
                 ElemType::Div,
-                vec![
-                    (
-                        Token::AttrIdentifier((5, 1, 6), "id".to_string()),
-                        Some(Token::Value((8, 1, 9), "An-Id".to_string())),
-                    ),
-                ],
+                vec![(
+                    Token::AttrIdentifier((5, 1, 6), "id".to_string()),
+                    Some(Token::Value((8, 1, 9), "An-Id".to_string())),
+                )],
                 vec![]
             ))
         );
@@ -860,12 +851,10 @@ mod tests {
             Ok(DomNode::new(
                 (0, 1, 1),
                 ElemType::Img,
-                vec![
-                    (
-                        Token::AttrIdentifier((5, 1, 6), "src".to_string()),
-                        Some(Token::Str((9, 1, 10), "abc".to_string())),
-                    ),
-                ],
+                vec![(
+                    Token::AttrIdentifier((5, 1, 6), "src".to_string()),
+                    Some(Token::Str((9, 1, 10), "abc".to_string())),
+                )],
                 vec![]
             ))
         );
@@ -881,12 +870,10 @@ mod tests {
             Ok(DomNode::new(
                 (0, 1, 1),
                 ElemType::Img,
-                vec![
-                    (
-                        Token::AttrIdentifier((5, 1, 6), "src".to_string()),
-                        Some(Token::Str((9, 1, 10), "abc".to_string())),
-                    ),
-                ],
+                vec![(
+                    Token::AttrIdentifier((5, 1, 6), "src".to_string()),
+                    Some(Token::Str((9, 1, 10), "abc".to_string())),
+                )],
                 vec![]
             ))
         );
@@ -917,12 +904,10 @@ mod tests {
             Ok(DomNode::new(
                 (7, 1, 8),
                 ElemType::Img,
-                vec![
-                    (
-                        Token::AttrIdentifier((20, 1, 21), "src".to_string()),
-                        Some(Token::Str((32, 1, 33), "abc".to_string())),
-                    ),
-                ],
+                vec![(
+                    Token::AttrIdentifier((20, 1, 21), "src".to_string()),
+                    Some(Token::Str((32, 1, 33), "abc".to_string())),
+                )],
                 vec![]
             ))
         );
@@ -946,62 +931,52 @@ mod tests {
                 (16, 2, 1),
                 ElemType::Html,
                 vec![],
-                vec![
-                    DomNode::new(
-                        (23, 3, 1),
-                        ElemType::Body,
-                        vec![],
-                        vec![
-                            DomNode::new(
-                                (31, 5, 1),
-                                ElemType::H1,
+                vec![DomNode::new(
+                    (23, 3, 1),
+                    ElemType::Body,
+                    vec![],
+                    vec![
+                        DomNode::new(
+                            (31, 5, 1),
+                            ElemType::H1,
+                            vec![],
+                            vec![DomNode::new(
+                                (35, 5, 5),
+                                ElemType::Text("My First Heading".to_string()),
                                 vec![],
-                                vec![
-                                    DomNode::new(
-                                        (35, 5, 5),
-                                        ElemType::Text("My First Heading".to_string()),
-                                        vec![],
-                                        vec![],
-                                    ),
-                                ],
-                            ),
-                            DomNode::new(
-                                (57, 6, 1),
-                                ElemType::A,
-                                vec![
-                                    (
-                                        Token::AttrIdentifier((60, 6, 4), "href".to_string()),
-                                        Some(Token::Value(
-                                            (65, 6, 9),
-                                            "https://www.google.com".to_string(),
-                                        )),
-                                    ),
-                                ],
-                                vec![
-                                    DomNode::new(
-                                        (88, 6, 32),
-                                        ElemType::Text("Link".to_string()),
-                                        vec![],
-                                        vec![],
-                                    ),
-                                ],
-                            ),
-                            DomNode::new(
-                                (97, 7, 1),
-                                ElemType::P,
                                 vec![],
-                                vec![
-                                    DomNode::new(
-                                        (100, 7, 4),
-                                        ElemType::Text("My first paragraph.".to_string()),
-                                        vec![],
-                                        vec![],
-                                    ),
-                                ],
-                            ),
-                        ],
-                    ),
-                ]
+                            )],
+                        ),
+                        DomNode::new(
+                            (57, 6, 1),
+                            ElemType::A,
+                            vec![(
+                                Token::AttrIdentifier((60, 6, 4), "href".to_string()),
+                                Some(Token::Value(
+                                    (65, 6, 9),
+                                    "https://www.google.com".to_string(),
+                                )),
+                            )],
+                            vec![DomNode::new(
+                                (88, 6, 32),
+                                ElemType::Text("Link".to_string()),
+                                vec![],
+                                vec![],
+                            )],
+                        ),
+                        DomNode::new(
+                            (97, 7, 1),
+                            ElemType::P,
+                            vec![],
+                            vec![DomNode::new(
+                                (100, 7, 4),
+                                ElemType::Text("My first paragraph.".to_string()),
+                                vec![],
+                                vec![],
+                            )],
+                        ),
+                    ],
+                )]
             ))
         );
     }
@@ -1023,62 +998,52 @@ mod tests {
                 (16, 2, 1),
                 ElemType::Html,
                 vec![],
-                vec![
-                    DomNode::new(
-                        (23, 3, 1),
-                        ElemType::Body,
-                        vec![],
-                        vec![
-                            DomNode::new(
-                                (31, 5, 1),
-                                ElemType::H1,
+                vec![DomNode::new(
+                    (23, 3, 1),
+                    ElemType::Body,
+                    vec![],
+                    vec![
+                        DomNode::new(
+                            (31, 5, 1),
+                            ElemType::H1,
+                            vec![],
+                            vec![DomNode::new(
+                                (38, 8, 2),
+                                ElemType::Text("My First Heading".to_string()),
                                 vec![],
-                                vec![
-                                    DomNode::new(
-                                        (38, 8, 2),
-                                        ElemType::Text("My First Heading".to_string()),
-                                        vec![],
-                                        vec![],
-                                    ),
-                                ],
-                            ),
-                            DomNode::new(
-                                (62, 11, 1),
-                                ElemType::A,
-                                vec![
-                                    (
-                                        Token::AttrIdentifier((66, 13, 1), "href".to_string()),
-                                        Some(Token::Value(
-                                            (73, 14, 1),
-                                            "https://www.google.com".to_string(),
-                                        )),
-                                    ),
-                                ],
-                                vec![
-                                    DomNode::new(
-                                        (98, 16, 2),
-                                        ElemType::Text("Link".to_string()),
-                                        vec![],
-                                        vec![],
-                                    ),
-                                ],
-                            ),
-                            DomNode::new(
-                                (108, 18, 1),
-                                ElemType::P,
                                 vec![],
-                                vec![
-                                    DomNode::new(
-                                        (113, 20, 2),
-                                        ElemType::Text("My first paragraph.".to_string()),
-                                        vec![],
-                                        vec![],
-                                    ),
-                                ],
-                            ),
-                        ],
-                    ),
-                ]
+                            )],
+                        ),
+                        DomNode::new(
+                            (62, 11, 1),
+                            ElemType::A,
+                            vec![(
+                                Token::AttrIdentifier((66, 13, 1), "href".to_string()),
+                                Some(Token::Value(
+                                    (73, 14, 1),
+                                    "https://www.google.com".to_string(),
+                                )),
+                            )],
+                            vec![DomNode::new(
+                                (98, 16, 2),
+                                ElemType::Text("Link".to_string()),
+                                vec![],
+                                vec![],
+                            )],
+                        ),
+                        DomNode::new(
+                            (108, 18, 1),
+                            ElemType::P,
+                            vec![],
+                            vec![DomNode::new(
+                                (113, 20, 2),
+                                ElemType::Text("My first paragraph.".to_string()),
+                                vec![],
+                                vec![],
+                            )],
+                        ),
+                    ],
+                )]
             ))
         );
     }

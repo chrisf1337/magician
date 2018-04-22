@@ -1,4 +1,4 @@
-use magicparser::error::Error;
+use magicparser::error::{Error, MultipleErrors};
 use magicparser::lexer::Lexer;
 use magicparser::parser::Parser;
 use magicparser::{ElemType, Pos, Token};
@@ -11,6 +11,13 @@ enum SelectorParserError {
     Eof(Pos),
     Unexpected(Pos, String),
     MultipleIds(Pos, String),
+    Multiple(Vec<SelectorParserError>),
+}
+
+impl MultipleErrors<Error> for SelectorParserError {
+    fn combine(errors: Vec<SelectorParserError>) -> Error {
+        Error::from(SelectorParserError::Multiple(errors))
+    }
 }
 
 impl From<SelectorParserError> for Error {
@@ -21,6 +28,9 @@ impl From<SelectorParserError> for Error {
             SelectorParserError::MultipleIds(pos, ids) => {
                 Error::Unexpected(pos, format!("{:?}", ids))
             }
+            SelectorParserError::Multiple(errs) => {
+                Error::Multiple(errs.into_iter().map(Error::from).collect())
+            }
         }
     }
 }
@@ -30,6 +40,9 @@ impl From<Error> for SelectorParserError {
         match error {
             Error::Eof(pos) => SelectorParserError::Eof(pos),
             Error::Unexpected(pos, msg) => SelectorParserError::Unexpected(pos, msg),
+            Error::Multiple(errs) => SelectorParserError::Multiple(
+                errs.into_iter().map(SelectorParserError::from).collect(),
+            ),
         }
     }
 }
@@ -271,7 +284,7 @@ impl SelectorParser {
             Some(_) => {
                 let parsers: Vec<ParserFn<Token>> =
                     vec![Self::parse_attr_identifier, Self::parse_string];
-                Some(self.try_parsers(&parsers, "expected value or string")?)
+                Some(self.try_parsers(&parsers)?)
             }
             None => None,
         };
@@ -310,15 +323,23 @@ impl SelectorParser {
             Self::parse_pseudo_class_selector,
             Self::parse_pseudo_element_selector,
         ];
+        let mut parser_err: Option<SelectorParserError> = None;
         loop {
-            let selector = match self.try_parsers(&parsers, "") {
+            let selector = match self.try_parsers(&parsers) {
                 Ok(sel) => sel,
-                Err(SelectorParserError::Unexpected(..)) => break,
+                Err(err @ SelectorParserError::Unexpected(..))
+                | Err(err @ SelectorParserError::Multiple(..)) => {
+                    parser_err = Some(err);
+                    break;
+                }
                 Err(err) => return Err(err),
             };
             selectors.push(selector);
         }
         if selectors.is_empty() {
+            if let Some(parser_err) = parser_err {
+                eprintln!("selector parser err: {:?}", parser_err);
+            }
             Err(SelectorParserError::Unexpected(
                 start_pos,
                 "expected selector sequence".to_string(),

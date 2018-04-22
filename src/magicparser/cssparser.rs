@@ -127,28 +127,48 @@ impl CssParser {
         Ok((selector, decl_block))
     }
 
-    fn parse_blocks(&mut self) -> Result<Vec<IntermediateBlock>> {
+    fn parse_blocks(&mut self) -> Vec<IntermediateBlock> {
         let mut blocks = vec![];
-        while let Ok(bl) = self.parse_block() {
-            blocks.push(bl)
+        let mut errs = vec![];
+        loop {
+            match self.parse_block() {
+                Ok(bl) => {
+                    blocks.push(bl);
+                    let _ = self.lexer.consume_whitespace();
+                }
+                Err(Error::Eof(..)) => {
+                    for err in errs {
+                        eprintln!("warning: CssParser::parse_blocks(): {:?}", err);
+                    }
+                    return blocks;
+                }
+                Err(err) => {
+                    errs.push(err);
+                    let _ = self.lexer.consume_until('}');
+                    let _ = self.lexer.consume_whitespace();
+                }
+            }
         }
-        Ok(blocks)
     }
 
-    pub(super) fn parse(input: &str) -> Result<CssBlocks> {
+    pub(super) fn parse(input: &str) -> CssBlocks {
         let mut parser = CssParser::new(input);
-        let int_blocks = parser.parse_blocks()?;
+        let int_blocks = parser.parse_blocks();
         let mut blocks = vec![];
+        let mut errs = vec![];
         for (token, decl_block) in int_blocks {
             match token {
-                Token::Selector(pos, sel_str) => {
-                    blocks.push((SelectorParser::parse(&sel_str, pos)?, decl_block))
-                }
-
+                Token::Selector(pos, sel_str) => match SelectorParser::parse(&sel_str, pos) {
+                    Ok(sel) => blocks.push((sel, decl_block)),
+                    Err(err) => errs.push((sel_str, err)),
+                },
                 _ => unreachable!(),
             }
         }
-        Ok(CssBlocks(blocks))
+        for err in errs {
+            eprintln!("warning: CssParser::parse(): {:?}", err);
+        }
+        CssBlocks(blocks)
     }
 }
 
@@ -375,12 +395,30 @@ mod tests {
         let res = parser.parse_blocks();
         assert_eq!(
             res,
-            Ok(vec![
+            vec![
                 (Token::Selector((0, 1, 1), "a".to_string()), vec![]),
                 (Token::Selector((5, 1, 6), "b".to_string()), vec![]),
-            ])
+            ]
         );
         assert_eq!(parser.pos(), (9, 1, 10));
+    }
+
+    #[test]
+    fn test_parse_skips_errors() {
+        let res = CssParser::parse("a { 1 } a:f {} div {}");
+        assert_eq!(
+            res,
+            CssBlocks(vec![(
+                Selector::Simple(SimpleSelector::new(
+                    (15, 1, 16),
+                    Some(ElemType::Div),
+                    None,
+                    vec![],
+                    false,
+                )),
+                vec![],
+            )])
+        );
     }
 
     #[test]
@@ -397,7 +435,7 @@ mod tests {
         let res = parser.parse_blocks();
         assert_eq!(
             res,
-            Ok(vec![
+            vec![
                 (
                     Token::Selector((0, 1, 1), "a:link, a:visited".to_string()),
                     vec![
@@ -422,7 +460,7 @@ mod tests {
                         Token::Value((130, 8, 21), "red".to_string()),
                     )],
                 ),
-            ])
+            ]
         );
     }
 
@@ -439,7 +477,7 @@ mod tests {
         let res = CssParser::parse(&input);
         assert_eq!(
             res,
-            Ok(CssBlocks(vec![
+            CssBlocks(vec![
                 (
                     Selector::Group(vec![
                         Selector::Seq(vec![
@@ -506,7 +544,7 @@ mod tests {
                         Token::Value((130, 8, 21), "red".to_string()),
                     )],
                 ),
-            ]))
+            ])
         );
     }
 
@@ -523,7 +561,7 @@ mod tests {
         let res = CssParser::parse(&input);
         assert_eq!(
             res,
-            Ok(CssBlocks(vec![
+            CssBlocks(vec![
                 (
                     Selector::Combinator(
                         Box::new(Selector::Seq(vec![
@@ -591,7 +629,7 @@ mod tests {
                         Token::Value((136, 18, 30), "red".to_string()),
                     )],
                 ),
-            ]))
+            ])
         );
     }
 }

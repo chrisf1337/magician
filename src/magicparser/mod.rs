@@ -118,5 +118,5 @@ pub fn parse_html(input: &str) -> error::Result<DomNodeRef> {
 }
 
 pub fn parse_css(input: &str) -> error::Result<CssBlocks> {
-    Ok(CssBlocks::from(cssparser::CssParser::parse(input)?))
+    Ok(CssBlocks::from(cssparser::CssParser::parse(input)))
 }
