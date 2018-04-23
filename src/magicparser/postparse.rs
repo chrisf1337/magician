@@ -115,6 +115,20 @@ impl DomNodeRef {
         }
     }
 
+    pub fn rev_child_index(&self) -> Option<usize> {
+        if let Some(parent) = self.parent() {
+            parent
+                .borrow()
+                .children
+                .iter()
+                .rev()
+                .position(|child| child == self)
+                .map(|x| x + 1)
+        } else {
+            None
+        }
+    }
+
     pub fn eq_ignore_id_num(&self, other: &DomNodeRef) -> bool {
         let this = self.borrow();
         let other = other.borrow();
@@ -732,53 +746,31 @@ mod tests {
     }
 
     #[test]
-    fn test_child_index1() {
+    fn test_child_index() {
         let parent =
             DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref();
         parent.add_children(vec![
-            DomNode::new(
-                ElemType::A,
-                Some("0".to_string()),
-                hashset!{},
-                hashmap!{},
-                None,
-                vec![],
-            ).to_dnref(),
-            DomNode::new(
-                ElemType::A,
-                Some("1".to_string()),
-                hashset!{},
-                hashmap!{},
-                None,
-                vec![],
-            ).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
         ]);
+        assert_eq!(parent.borrow().children[0].child_index(), Some(1));
         assert_eq!(parent.borrow().children[1].child_index(), Some(2));
+        assert_eq!(parent.borrow().children[2].child_index(), Some(3));
     }
 
     #[test]
-    fn test_child_index2() {
+    fn test_rev_child_index() {
         let parent =
             DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref();
         parent.add_children(vec![
-            DomNode::new(
-                ElemType::A,
-                Some("0".to_string()),
-                hashset!{"cl1".to_string()},
-                hashmap!{"class".to_string() => Some("cl1".to_string())},
-                None,
-                vec![],
-            ).to_dnref(),
-            DomNode::new(
-                ElemType::A,
-                Some("1".to_string()),
-                hashset!{},
-                hashmap!{},
-                None,
-                vec![],
-            ).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
         ]);
-        assert_eq!(parent.borrow().children[0].child_index(), Some(1));
+        assert_eq!(parent.borrow().children[0].rev_child_index(), Some(3));
+        assert_eq!(parent.borrow().children[1].rev_child_index(), Some(2));
+        assert_eq!(parent.borrow().children[2].rev_child_index(), Some(1));
     }
 
     #[test]

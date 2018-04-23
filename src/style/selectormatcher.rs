@@ -165,6 +165,22 @@ fn matches_pseudo_class_selector(dom_node: &DomNodeRef, selector: &PseudoClassSe
                 .unwrap() + 1;
             expr.matches(child_index)
         }
+        PseudoClassSelector::NthLastChild(ref expr) => {
+            let rev_child_index = dom_node.rev_child_index().unwrap_or(1);
+            expr.matches(rev_child_index)
+        }
+        PseudoClassSelector::NthLastOfType(ref expr) => {
+            let parent = dom_node.parent().unwrap();
+            let parent = parent.borrow();
+            let rev_child_index = parent
+                .children
+                .iter()
+                .rev()
+                .filter(|node| node.borrow().elem_type == dom_node.borrow().elem_type)
+                .position(|node| node == dom_node)
+                .unwrap() + 1;
+            expr.matches(rev_child_index)
+        }
         // TODO: Implement other pseudo-class selectors (see README)
         _ => unimplemented!(),
     }
@@ -719,12 +735,12 @@ mod tests {
             DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
         ]);
 
-        let selector = PseudoClassSelector::NthChild(NthExpr::A(1));
-        assert!(matches_pseudo_class_selector(
+        let selector = PseudoClassSelector::NthChild(NthExpr::A(2));
+        assert!(!matches_pseudo_class_selector(
             &dom_node.borrow().children[0],
             &selector
         ));
-        assert!(!matches_pseudo_class_selector(
+        assert!(matches_pseudo_class_selector(
             &dom_node.borrow().children[1],
             &selector
         ));
@@ -1100,6 +1116,156 @@ mod tests {
             &selector
         ));
         assert!(!matches_pseudo_class_selector(
+            &dom_node.borrow().children[5],
+            &selector
+        ));
+        assert!(matches_pseudo_class_selector(
+            &dom_node.borrow().children[6],
+            &selector
+        ));
+    }
+
+    #[test]
+    fn test_matches_pcs_nth_last_child1() {
+        let dom_node = DomNode::new(
+            ElemType::A,
+            None,
+            hashset!{},
+            hashmap!{
+                "attr".to_string() => Some("http://www.ExAmplE.com".to_string())
+            },
+            None,
+            vec![],
+        ).to_dnref();
+        let selector = PseudoClassSelector::NthLastChild(NthExpr::A(1));
+        assert!(matches_pseudo_class_selector(&dom_node, &selector));
+
+        let selector = PseudoClassSelector::NthLastChild(NthExpr::A(2));
+        assert!(!matches_pseudo_class_selector(&dom_node, &selector));
+    }
+
+    #[test]
+    fn test_matches_pcs_nth_last_child2() {
+        let dom_node = DomNode::new(
+            ElemType::A,
+            None,
+            hashset!{},
+            hashmap!{
+                "attr".to_string() => Some("http://www.ExAmplE.com".to_string())
+            },
+            None,
+            vec![],
+        ).to_dnref();
+        dom_node.add_children(vec![
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+        ]);
+
+        let selector = PseudoClassSelector::NthLastChild(NthExpr::A(2));
+        assert!(!matches_pseudo_class_selector(
+            &dom_node.borrow().children[0],
+            &selector
+        ));
+        assert!(!matches_pseudo_class_selector(
+            &dom_node.borrow().children[1],
+            &selector
+        ));
+        assert!(matches_pseudo_class_selector(
+            &dom_node.borrow().children[2],
+            &selector
+        ));
+        assert!(!matches_pseudo_class_selector(
+            &dom_node.borrow().children[3],
+            &selector
+        ));
+    }
+
+    #[test]
+    fn test_matches_pcs_nth_last_child3() {
+        let dom_node = DomNode::new(
+            ElemType::A,
+            None,
+            hashset!{},
+            hashmap!{
+                "attr".to_string() => Some("http://www.ExAmplE.com".to_string())
+            },
+            None,
+            vec![],
+        ).to_dnref();
+        dom_node.add_children(vec![
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+        ]);
+
+        let selector =
+            PseudoClassSelector::NthLastChild(NthExpr::AnOpB(2, Some(NthExprOp::Add), 1));
+        assert!(!matches_pseudo_class_selector(
+            &dom_node.borrow().children[0],
+            &selector
+        ));
+        assert!(matches_pseudo_class_selector(
+            &dom_node.borrow().children[1],
+            &selector
+        ));
+        assert!(!matches_pseudo_class_selector(
+            &dom_node.borrow().children[2],
+            &selector
+        ));
+        assert!(matches_pseudo_class_selector(
+            &dom_node.borrow().children[3],
+            &selector
+        ));
+    }
+
+    #[test]
+    fn test_matches_pcs_nth_last_of_type_anopb() {
+        let dom_node = DomNode::new(
+            ElemType::A,
+            None,
+            hashset!{},
+            hashmap!{
+                "attr".to_string() => Some("http://www.ExAmplE.com".to_string())
+            },
+            None,
+            vec![],
+        ).to_dnref();
+        dom_node.add_children(vec![
+            DomNode::new(ElemType::Div, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::Div, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::Div, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+        ]);
+
+        let selector =
+            PseudoClassSelector::NthLastOfType(NthExpr::AnOpB(2, Some(NthExprOp::Add), 1));
+        assert!(matches_pseudo_class_selector(
+            &dom_node.borrow().children[0],
+            &selector
+        ));
+        assert!(!matches_pseudo_class_selector(
+            &dom_node.borrow().children[1],
+            &selector
+        ));
+        assert!(!matches_pseudo_class_selector(
+            &dom_node.borrow().children[2],
+            &selector
+        ));
+        assert!(matches_pseudo_class_selector(
+            &dom_node.borrow().children[3],
+            &selector
+        ));
+        assert!(!matches_pseudo_class_selector(
+            &dom_node.borrow().children[4],
+            &selector
+        ));
+        assert!(matches_pseudo_class_selector(
             &dom_node.borrow().children[5],
             &selector
         ));
