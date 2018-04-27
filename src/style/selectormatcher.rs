@@ -186,6 +186,8 @@ fn matches_pseudo_class_selector(dom_node: &DomNodeRef, selector: &PseudoClassSe
     }
 }
 
+/// Given that dom_node matches the first selector of the combinator, returns all
+/// children of dom_node that match the second selector.
 fn matching_child_combinator_nodes(dom_node: &DomNodeRef, selector: &Selector) -> Vec<DomNodeRef> {
     match selector {
         &Selector::Combinator(ref first, Combinator::Child, ref second) => {
@@ -195,6 +197,29 @@ fn matching_child_combinator_nodes(dom_node: &DomNodeRef, selector: &Selector) -
             (&dom_node.borrow().children)
                 .iter()
                 .filter(|child| matches(child, second))
+                .map(|x| x.clone())
+                .collect()
+        }
+        _ => unreachable!(),
+    }
+}
+
+/// Given that dom_node matches the first selector of the combinator, returns all
+/// siblings of dom_node that match the second selector and come after dom_node.
+fn matching_gen_sib_combinator_nodes(
+    dom_node: &DomNodeRef,
+    selector: &Selector,
+) -> Vec<DomNodeRef> {
+    match selector {
+        &Selector::Combinator(ref first, Combinator::GeneralSibling, ref second) => {
+            if !matches(dom_node, first) {
+                return vec![];
+            }
+            let siblings = dom_node.siblings();
+            let child_index = dom_node.child_index().unwrap_or(1) - 1;
+            (&siblings[child_index..])
+                .iter()
+                .filter(|x| matches(x, second))
                 .map(|x| x.clone())
                 .collect()
         }
@@ -1424,6 +1449,178 @@ mod tests {
         );
         assert_eq!(
             matching_child_combinator_nodes(&dom_node, &selector),
+            vec![]
+        );
+    }
+
+    #[test]
+    fn test_matching_gen_sib_combinator_nodes1() {
+        let dom_node = DomNode::new(
+            ElemType::A,
+            None,
+            hashset!{},
+            hashmap!{
+                "attr".to_string() => Some("http://www.ExAmplE.com".to_string())
+            },
+            None,
+            vec![],
+        ).to_dnref();
+        dom_node.add_children(vec![
+            DomNode::new(ElemType::Div, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::Div, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::P, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::Div, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+        ]);
+        let selector = Selector::Combinator(
+            Box::new(Selector::Simple(SimpleSelector::new(
+                Some(ElemType::P),
+                None,
+                hashset!{},
+                false,
+            ))),
+            Combinator::GeneralSibling,
+            Box::new(Selector::Simple(SimpleSelector::new(
+                Some(ElemType::Div),
+                None,
+                hashset!{},
+                false,
+            ))),
+        );
+        let children = &dom_node.borrow().children;
+        assert_eq!(
+            matching_gen_sib_combinator_nodes(&children[3], &selector),
+            vec![children[5].clone()]
+        );
+    }
+
+    #[test]
+    fn test_matching_gen_sib_combinator_nodes2() {
+        let dom_node = DomNode::new(
+            ElemType::A,
+            None,
+            hashset!{},
+            hashmap!{
+                "attr".to_string() => Some("http://www.ExAmplE.com".to_string())
+            },
+            None,
+            vec![],
+        ).to_dnref();
+        dom_node.add_children(vec![
+            DomNode::new(ElemType::Div, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::Div, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::P, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::Div, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+        ]);
+        let selector = Selector::Combinator(
+            Box::new(Selector::Simple(SimpleSelector::new(
+                Some(ElemType::P),
+                None,
+                hashset!{},
+                false,
+            ))),
+            Combinator::GeneralSibling,
+            Box::new(Selector::Simple(SimpleSelector::new(
+                Some(ElemType::A),
+                None,
+                hashset!{},
+                false,
+            ))),
+        );
+        let children = &dom_node.borrow().children;
+        assert_eq!(
+            matching_gen_sib_combinator_nodes(&children[3], &selector),
+            vec![children[4].clone(), children[6].clone()]
+        );
+    }
+
+    #[test]
+    fn test_matching_gen_sib_combinator_nodes3() {
+        let dom_node = DomNode::new(
+            ElemType::A,
+            None,
+            hashset!{},
+            hashmap!{
+                "attr".to_string() => Some("http://www.ExAmplE.com".to_string())
+            },
+            None,
+            vec![],
+        ).to_dnref();
+        dom_node.add_children(vec![
+            DomNode::new(ElemType::Div, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::Div, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::P, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::Div, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+        ]);
+        let selector = Selector::Combinator(
+            Box::new(Selector::Simple(SimpleSelector::new(
+                Some(ElemType::Div),
+                None,
+                hashset!{},
+                false,
+            ))),
+            Combinator::GeneralSibling,
+            Box::new(Selector::Simple(SimpleSelector::new(
+                Some(ElemType::A),
+                None,
+                hashset!{},
+                false,
+            ))),
+        );
+        let children = &dom_node.borrow().children;
+        assert_eq!(
+            matching_gen_sib_combinator_nodes(&children[2], &selector),
+            vec![children[4].clone(), children[6].clone()]
+        );
+    }
+
+    #[test]
+    fn test_matching_gen_sib_combinator_nodes_none() {
+        let dom_node = DomNode::new(
+            ElemType::A,
+            None,
+            hashset!{},
+            hashmap!{
+                "attr".to_string() => Some("http://www.ExAmplE.com".to_string())
+            },
+            None,
+            vec![],
+        ).to_dnref();
+        dom_node.add_children(vec![
+            DomNode::new(ElemType::Div, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::Div, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::P, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::Div, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+            DomNode::new(ElemType::A, None, hashset!{}, hashmap!{}, None, vec![]).to_dnref(),
+        ]);
+        let selector = Selector::Combinator(
+            Box::new(Selector::Simple(SimpleSelector::new(
+                Some(ElemType::P),
+                None,
+                hashset!{},
+                false,
+            ))),
+            Combinator::GeneralSibling,
+            Box::new(Selector::Simple(SimpleSelector::new(
+                Some(ElemType::A),
+                None,
+                hashset!{},
+                false,
+            ))),
+        );
+        let children = &dom_node.borrow().children;
+        assert_eq!(
+            matching_gen_sib_combinator_nodes(&children[0], &selector),
             vec![]
         );
     }

@@ -115,6 +115,7 @@ impl DomNodeRef {
         }
     }
 
+    // Also starts at 1
     pub fn rev_child_index(&self) -> Option<usize> {
         if let Some(parent) = self.parent() {
             parent
@@ -139,6 +140,14 @@ impl DomNodeRef {
                 .iter()
                 .zip(other.children.iter())
                 .all(|(ch1, ch2)| ch1.eq_ignore_id_num(ch2))
+    }
+
+    pub fn siblings(&self) -> Vec<DomNodeRef> {
+        if let Some(parent) = self.parent() {
+            parent.borrow().children.iter().map(|x| x.clone()).collect()
+        } else {
+            vec![]
+        }
     }
 }
 
